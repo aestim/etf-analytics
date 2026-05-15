@@ -1,0 +1,12 @@
+etf_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5433') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'etf') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'etf') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'etf_analytics') }}"
+      schema: public
+      threads: 4

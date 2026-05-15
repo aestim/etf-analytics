@@ -1,0 +1,22 @@
+name: etf_analytics
+version: 1.0.0
+config-version: 2
+
+profile: etf_analytics
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  etf_analytics:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table

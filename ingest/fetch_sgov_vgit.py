@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""
+Fetch SGOV and VGIT daily prices from Yahoo Finance.
+Writes raw parquet under data/raw/{ticker}/ and optionally loads Postgres.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pandas as pd
+import yfinance as yf
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env")
+TICKERS = [t.strip() for t in os.getenv("ETF_TICKERS", "SGOV,VGIT").split(",") if t.strip()]
+_raw = Path(os.getenv("RAW_DATA_DIR", ROOT / "data" / "raw"))
+RAW_DIR = _raw if _raw.is_absolute() else ROOT / _raw
+PERIOD = os.getenv("FETCH_PERIOD", "3y")
+
+
+def _normalize_history(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    df = df.reset_index()
+    df.columns = [c.lower().replace(" ", "_") for c in df.columns]
+    rename = {
+        "date": "price_date",
+        "adj_close": "adj_close",
+    }
+    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+    if "adj_close" not in df.columns and "close" in df.columns:
+        df["adj_close"] = df["close"]
+    df["ticker"] = ticker
+    df["price_date"] = pd.to_datetime(df["price_date"]).dt.date
+    df["_ingested_at"] = datetime.now(timezone.utc)
+    cols = ["ticker", "price_date", "open", "high", "low", "close", "adj_close", "volume", "_ingested_at"]
+    keep = [c for c in cols if c in df.columns]
+    return df[keep].drop_duplicates(subset=["ticker", "price_date"])
+
+
+def fetch_ticker(ticker: str) -> pd.DataFrame:
+    history = yf.Ticker(ticker).history(period=PERIOD, auto_adjust=False)
+    if history.empty:
+        raise RuntimeError(f"No data returned for {ticker}")
+    return _normalize_history(history, ticker)
+
+
+def write_raw_parquet(df: pd.DataFrame, ticker: str) -> Path:
+    as_of = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    out_dir = RAW_DIR / ticker / f"dt={as_of}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "prices.parquet"
+    df.to_parquet(path, index=False)
+    return path
+
+
+def load_postgres(df: pd.DataFrame) -> None:
+    host = os.getenv("POSTGRES_HOST")
+    if not host:
+        return
+    import psycopg2
+    from psycopg2.extras import execute_values
+
+    conn = psycopg2.connect(
+        host=host,
+        port=os.getenv("POSTGRES_PORT", "5432"),
+        dbname=os.getenv("POSTGRES_DB", "etf_analytics"),
+        user=os.getenv("POSTGRES_USER", "etf"),
+        password=os.getenv("POSTGRES_PASSWORD", "etf"),
+    )
+    rows = [
+        (
+            r.ticker,
+            r.price_date,
+            getattr(r, "open", None),
+            getattr(r, "high", None),
+            getattr(r, "low", None),
+            getattr(r, "close", None),
+            r.adj_close,
+            int(r.volume) if pd.notna(getattr(r, "volume", None)) else None,
+        )
+        for r in df.itertuples(index=False)
+    ]
+    sql = """
+        INSERT INTO raw.etf_prices
+            (ticker, price_date, open, high, low, close, adj_close, volume)
+        VALUES %s
+        ON CONFLICT (ticker, price_date) DO UPDATE SET
+            adj_close = EXCLUDED.adj_close,
+            volume = EXCLUDED.volume,
+            ingested_at = NOW()
+    """
+    with conn.cursor() as cur:
+        execute_values(cur, sql, rows)
+    conn.commit()
+    conn.close()
+
+
+def main() -> None:
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    for ticker in TICKERS:
+        print(f"Fetching {ticker}...")
+        df = fetch_ticker(ticker)
+        path = write_raw_parquet(df, ticker)
+        print(f"  Wrote {path} ({len(df)} rows)")
+        try:
+            load_postgres(df)
+            print("  Loaded raw.etf_prices")
+        except Exception as exc:  # noqa: BLE001 — portfolio script; log and continue without DB
+            print(f"  Postgres skip: {exc}")
+
+
+if __name__ == "__main__":
+    main()

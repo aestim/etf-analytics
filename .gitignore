@@ -1,0 +1,69 @@
+# Secrets & local env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Ingest / dashboard local venvs
+ingest/.venv/
+dashboard/.venv/
+
+# Market data (reproducible via ingest; do not commit)
+data/raw/**/*
+!data/raw/.gitkeep
+*.parquet
+*.csv
+!dbt/seeds/**/*.csv
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/profiles.yml
+dbt/.user.yml
+
+# Airflow
+airflow/logs/**/*
+!airflow/logs/.gitkeep
+airflow/*.pid
+airflow/airflow.cfg
+airflow/airflow.db
+airflow/webserver_config.py
+
+# Docker (local overrides only)
+docker-compose.override.yml
+
+# OS & editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Streamlit
+.streamlit/secrets.toml
