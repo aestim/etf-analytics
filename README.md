@@ -97,6 +97,21 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+Open http://localhost:8501 — compare **SGOV** (short Treasury) vs **VGIT** (intermediate Treasury).
+
+## Dashboard
+
+| View | Metrics |
+|------|---------|
+| **Adjusted close** | Price level over ~3 years |
+| **Cumulative return** | Compounded daily returns |
+| **30-day rolling volatility** | Risk comparison |
+| **Latest snapshot** | Most recent vol & drawdown per ticker |
+
+![Adjusted close and cumulative return — SGOV vs VGIT](docs/images/dashboard-prices-returns.png)
+
+![30-day rolling volatility and latest snapshot](docs/images/dashboard-volatility-snapshot.png)
+
 ## Development order (recommended)
 
 1. Document (`README`, `architecture`, `data-dictionary`) — done at init
