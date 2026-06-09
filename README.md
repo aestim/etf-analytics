@@ -137,6 +137,16 @@ All project tests passing after `dbt run`. Save terminal capture as `docs/images
 5. Airflow DAG (glue only; each task already works alone)
 6. Streamlit dashboard
 
+## GitHub Actions (daily ingest)
+
+Workflow: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices and commits parquet to `data/raw/`.
+
+If `git push` fails with **403 Permission denied to github-actions[bot]**:
+
+1. Repo **Settings** → **Actions** → **General**
+2. **Workflow permissions** → **Read and write permissions**
+3. Save, then re-run the workflow (**Actions** → **Daily ETF ingest** → **Run workflow**)
+
 ## Limitations
 
 - Free market data may be delayed or revised; document as-of dates in mart tables.

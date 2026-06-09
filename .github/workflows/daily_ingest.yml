@@ -2,17 +2,29 @@ name: Daily ETF ingest
 
 on:
   schedule:
-    - cron: '0 21 * * 1-5'  # 매일 평일 21:00 UTC = 장 마감 후
-  workflow_dispatch:          # 수동 실행 버튼
+    - cron: '0 21 * * 1-5'  # Weekdays 21:00 UTC (after US market close)
+  workflow_dispatch:
+
+# Required for git push from Actions (Settings → Actions → Workflow permissions → Read and write)
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-ingest-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -21,11 +33,25 @@ jobs:
 
       - name: Fetch prices
         run: python ingest/fetch_sgov_vgit.py
+        env:
+          RAW_DATA_DIR: data/raw
+          # CI has no Postgres; parquet only
+          POSTGRES_HOST: ''
 
-      - name: Commit raw data
+      - name: Commit and push raw data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/raw/
-          git diff --staged --quiet || git commit -m "chore: daily ingest $(date -u +%Y-%m-%d)"
-          git push
+
+          # data/raw/*.parquet is gitignored locally; force-add CI snapshots
+          if find data/raw -name '*.parquet' | grep -q .; then
+            find data/raw -name '*.parquet' -print0 | xargs -0 git add -f
+          fi
+
+          if git diff --staged --quiet; then
+            echo "No raw data changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: daily ingest $(date -u +%Y-%m-%d)"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
