@@ -1,0 +1,4 @@
+# Installed into the custom Airflow image (ingest + dbt)
+-r ../ingest/requirements.txt
+dbt-core>=1.7,<2
+dbt-postgres>=1.7,<2

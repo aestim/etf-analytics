@@ -99,7 +99,11 @@ streamlit run app.py
 
 Open http://localhost:8501 — compare **SGOV** (short Treasury) vs **VGIT** (intermediate Treasury).
 
-## Dashboard
+## Screenshots (portfolio demo)
+
+Put PNG files in [`docs/images/`](docs/images/) (see [capture guide](docs/images/README.md)).
+
+### 1. Streamlit dashboard
 
 | View | Metrics |
 |------|---------|
@@ -111,6 +115,18 @@ Open http://localhost:8501 — compare **SGOV** (short Treasury) vs **VGIT** (in
 ![30-day rolling volatility and latest snapshot](docs/images/dashboard-volatility-snapshot.png)
 
 ![Adjusted close and cumulative return — SGOV vs VGIT](docs/images/dashboard-prices-returns.png)
+
+### 2. Apache Airflow
+
+DAG `etf_pipeline` (ingest → dbt run → dbt test). Save capture as `docs/images/airflow-dag.png`.
+
+![Airflow DAG etf_pipeline](docs/images/airflow-dag.png)
+
+### 3. dbt tests
+
+All project tests passing after `dbt run`. Save terminal capture as `docs/images/dbt-test-success.png`.
+
+![dbt test — 12/12 passed](docs/images/dbt-test-success.png)
 
 ## Development order (recommended)
 

@@ -2,7 +2,9 @@
 # Usage: cp .env.example .env && docker compose up -d
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.9.1-python3.11
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://etf:etf@postgres:5432/etf_analytics
@@ -15,11 +17,20 @@ x-airflow-common: &airflow-common
     _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-admin}
     _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-admin}
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+  # Ingest/dbt from inside Docker network (not host localhost:5433)
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_USER: etf
+    POSTGRES_PASSWORD: etf
+    POSTGRES_DB: etf_analytics
+    RAW_DATA_DIR: /opt/airflow/data/raw
+    PATH: /home/airflow/.local/bin:/usr/local/bin:/usr/bin:/bin
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./ingest:/opt/airflow/ingest
     - ./dbt:/opt/airflow/dbt
+    - ./dbt/profiles.yml.example:/opt/airflow/dbt/profiles.yml:ro
     - ./data:/opt/airflow/data
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
