@@ -1,5 +1,7 @@
 # ETF Analytics Pipeline
 
+🔗 **Live demo:** _deploy to Streamlit Community Cloud and put the URL here_
+
 Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (14 tickers by default: US & international equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and an **LLM-powered natural-language Q&A layer in progress**.
 
 ## Business requirement
@@ -15,6 +17,7 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 - **Dashboard** — Streamlit multipage: price/return/volatility charts with a stable 24-color palette, an interactive ticker guide, and metric tooltips backed by a shared glossary
 - **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) backtested by pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
+- **Demo mode** — with no database reachable, the app falls back to the parquet snapshots committed by CI and recomputes the marts in pandas, so the hosted demo needs zero infrastructure
 
 ## Roadmap — LLM Q&A layer (in progress)
 
@@ -99,21 +102,21 @@ Open http://localhost:8501 — dashboard on the home page, **Strategy Lab** in t
 
 ### Dashboard — 14-ETF cross-asset view
 
-![Dashboard: prices, cumulative returns, rolling volatility](docs/images/dashboard-overview.png)
+<img src="docs/images/dashboard-overview.png" alt="Dashboard: prices, cumulative returns, rolling volatility" width="850">
 
 ### Ticker guide
 
-![Ticker guide: overview table with per-ticker detail card](docs/images/ticker-guide.png)
+<img src="docs/images/ticker-guide.png" alt="Ticker guide: overview table with per-ticker detail card" width="850">
 
 ### Strategy Lab
 
-![Strategy Lab: equity curves, drawdowns, and metrics](docs/images/strategy-lab.png)
+<img src="docs/images/strategy-lab.png" alt="Strategy Lab: equity curves, drawdowns, and metrics" width="850">
 
 ### Pipeline
 
-![Airflow etf_pipeline run, all tasks green](docs/images/airflow-dag.png)
+<img src="docs/images/airflow-dag.png" alt="Airflow etf_pipeline run, all tasks green" width="850">
 
-![dbt test passing, including the daily-return anomaly tripwire](docs/images/dbt-test-success.png)
+<img src="docs/images/dbt-test-success.png" alt="dbt test passing, including the daily-return anomaly tripwire" width="850">
 
 ## GitHub Actions (daily ingest)
 

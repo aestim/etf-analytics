@@ -35,6 +35,8 @@ jobs:
         run: python ingest/fetch_prices.py
         env:
           RAW_DATA_DIR: data/raw
+          ETF_TICKERS: SGOV,VGIT,TLT,BND,LQD,HYG,TIP,SPY,QQQ,QLD,TQQQ,VEA,VNQ,GLD
+          FETCH_PERIOD: 10y
           # CI has no Postgres; parquet only
           POSTGRES_HOST: ''
 

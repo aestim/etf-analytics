@@ -12,6 +12,7 @@ import streamlit as st
 from db import (
     GLOSSARY,
     PLOTLY_LAYOUT,
+    demo_mode_banner,
     glossary_expander,
     load_dim_etf,
     load_mart_returns,
@@ -45,11 +46,13 @@ try:
     risk_df = load_mart_risk()
 except Exception as exc:
     st.error(
-        "Could not load data from PostgreSQL. "
-        "Start Docker, run ingest + `dbt run`, then refresh.\n\n"
+        "No data available: neither PostgreSQL nor parquet snapshots. "
+        "Start Docker + run ingest & `dbt run`, or commit raw parquet.\n\n"
         f"Details: {exc}"
     )
     st.stop()
+
+demo_mode_banner()
 
 with st.expander("📖 Ticker guide"):
     try:

@@ -21,7 +21,13 @@ for _p in (_ROOT / "dashboard", _ROOT / "analytics"):
         sys.path.insert(0, str(_p))
 
 import strategies as strat  # noqa: E402
-from db import GLOSSARY, PLOTLY_LAYOUT, glossary_expander, load_mart_returns  # noqa: E402
+from db import (  # noqa: E402
+    GLOSSARY,
+    PLOTLY_LAYOUT,
+    demo_mode_banner,
+    glossary_expander,
+    load_mart_returns,
+)
 
 st.set_page_config(page_title="Strategy Lab", page_icon="🧪", layout="wide")
 
@@ -37,8 +43,10 @@ REQUIRED = {"SPY", "QQQ", "BND", "TQQQ"}
 try:
     returns_df = load_mart_returns()
 except Exception as exc:
-    st.error(f"Could not load data from PostgreSQL: {exc}")
+    st.error(f"No data available (Postgres or parquet): {exc}")
     st.stop()
+
+demo_mode_banner()
 
 prices = returns_df.pivot(index="price_date", columns="ticker", values="adj_close").sort_index()
 missing = REQUIRED - set(prices.columns)
