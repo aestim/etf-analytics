@@ -9,11 +9,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from db import PLOTLY_LAYOUT, load_dim_etf, load_mart_returns, load_mart_risk
+from db import PLOTLY_LAYOUT, load_dim_etf, load_mart_returns, load_mart_risk, ticker_color_map
 
 
-def line_chart(df: pd.DataFrame, y: str, title: str) -> None:
-    fig = px.line(df, x="price_date", y=y, color="ticker", title=title)
+def line_chart(df: pd.DataFrame, y: str, title: str, colors: dict | None = None) -> None:
+    fig = px.line(df, x="price_date", y=y, color="ticker", title=title, color_discrete_map=colors)
     fig.update_layout(**PLOTLY_LAYOUT)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -49,6 +49,7 @@ with st.expander("📖 Ticker guide"):
         st.caption("Run `dbt seed && dbt run` to build the dim_etf reference table.")
 
 tickers = sorted(returns_df["ticker"].unique())
+COLORS = ticker_color_map(tickers)  # stable palette across all charts
 selected = st.multiselect("Tickers", tickers, default=tickers)
 filtered = returns_df[returns_df["ticker"].isin(selected)]
 risk_filtered = risk_df[risk_df["ticker"].isin(selected)]
@@ -57,7 +58,7 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Adjusted close")
-    line_chart(filtered, "adj_close", "Adjusted close")
+    line_chart(filtered, "adj_close", "Adjusted close", COLORS)
 
 with col2:
     st.subheader("Cumulative return")
@@ -65,10 +66,10 @@ with col2:
     cum["cum_return"] = cum.groupby("ticker")["daily_return"].transform(
         lambda s: (1 + s.fillna(0)).cumprod() - 1
     )
-    line_chart(cum, "cum_return", "Cumulative return")
+    line_chart(cum, "cum_return", "Cumulative return", COLORS)
 
 st.subheader("30-day rolling volatility")
-line_chart(risk_filtered, "rolling_vol_30d", "30-day rolling volatility")
+line_chart(risk_filtered, "rolling_vol_30d", "30-day rolling volatility", COLORS)
 
 st.subheader("Latest snapshot")
 latest = (

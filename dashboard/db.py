@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -21,6 +22,17 @@ PLOTLY_LAYOUT = dict(
     legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02),
     margin=dict(l=40, r=120, t=30, b=40),
 )
+
+
+def ticker_color_map(tickers) -> dict[str, str]:
+    """Stable, distinct color per ticker.
+
+    Plotly's default qualitative palette has only 10 colors, so with more
+    than 10 tickers lines start sharing colors. Dark24 gives 24 distinct
+    colors, and sorting makes the mapping consistent across charts.
+    """
+    palette = px.colors.qualitative.Dark24
+    return {t: palette[i % len(palette)] for i, t in enumerate(sorted(tickers))}
 
 
 def pg_conn():
