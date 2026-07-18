@@ -53,7 +53,32 @@ except Exception as exc:
 
 with st.expander("📖 Ticker guide"):
     try:
-        st.dataframe(load_dim_etf(), use_container_width=True, hide_index=True)
+        st.dataframe(
+            load_dim_etf(),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "ticker": st.column_config.TextColumn(
+                    "ticker", help="Exchange symbol — join key across all mart tables"
+                ),
+                "name": st.column_config.TextColumn("name", help="Full fund name"),
+                "asset_class": st.column_config.TextColumn(
+                    "asset_class",
+                    help="Broad bucket (equity / leveraged_equity / bond / real_estate / commodity). Compare like with like — a bond ETF having lower volatility than stocks is expected, not insight.",
+                ),
+                "sub_class": st.column_config.TextColumn(
+                    "sub_class",
+                    help="Finer machine-readable grouping, used as a SQL filter key. E.g. treasury_long = 20y+ US Treasuries, corporate_hy = junk bonds, nasdaq_100_3x = 3x daily Nasdaq-100.",
+                ),
+                "leverage": st.column_config.NumberColumn(
+                    "leverage",
+                    help="Daily leverage multiple. 1 = unleveraged. 2/3 = amplifies each DAY's move — long-run returns are path-dependent, not simply 2x/3x.",
+                ),
+                "description": st.column_config.TextColumn(
+                    "description", help="What the fund holds and how it tends to behave"
+                ),
+            },
+        )
     except Exception:
         st.caption("Run `dbt seed && dbt run` to build the dim_etf reference table.")
 

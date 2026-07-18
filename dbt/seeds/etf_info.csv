@@ -1,15 +1,15 @@
 ticker,name,asset_class,sub_class,leverage,description
-SGOV,iShares 0-3 Month Treasury Bond ETF,bond,treasury_short,1,Ultra-short US T-bills; cash-like parking with minimal rate risk
-VGIT,Vanguard Intermediate-Term Treasury ETF,bond,treasury_intermediate,1,US Treasuries with 3-10y maturities; moderate duration
-TLT,iShares 20+ Year Treasury Bond ETF,bond,treasury_long,1,Long-duration US Treasuries; highly sensitive to interest rates
-BND,Vanguard Total Bond Market ETF,bond,aggregate,1,Broad US investment-grade bond market (Treasuries + corporates + MBS)
-LQD,iShares iBoxx USD Investment Grade Corporate Bond ETF,bond,corporate_ig,1,US investment-grade corporate bonds; credit spread over Treasuries
-HYG,iShares iBoxx USD High Yield Corporate Bond ETF,bond,corporate_hy,1,US high-yield (junk) corporate bonds; equity-like credit risk
-TIP,iShares TIPS Bond ETF,bond,tips,1,US inflation-protected Treasuries; principal indexed to CPI
-SPY,SPDR S&P 500 ETF Trust,equity,us_large_cap,1,US large-cap equities tracking the S&P 500
-QQQ,Invesco QQQ Trust,equity,nasdaq_100,1,Nasdaq-100; tech- and growth-heavy US large caps
-QLD,ProShares Ultra QQQ,leveraged_equity,nasdaq_100_2x,2,2x DAILY Nasdaq-100 returns; long-run result is path-dependent (volatility drag)
-TQQQ,ProShares UltraPro QQQ,leveraged_equity,nasdaq_100_3x,3,3x DAILY Nasdaq-100 returns; extreme drawdowns; not a 3x long-term tracker
-VEA,Vanguard FTSE Developed Markets ETF,equity,intl_developed,1,Developed-market equities outside the US (Europe/Japan/etc.)
-VNQ,Vanguard Real Estate ETF,real_estate,us_reit,1,US listed real estate investment trusts (REITs)
-GLD,SPDR Gold Shares,commodity,gold,1,Physical gold bullion exposure
+SGOV,iShares 0-3 Month Treasury Bond ETF,bond,treasury_short,1,"Holds US Treasury bills maturing within 3 months. Price barely moves; total return roughly tracks short-term interest rates. Works as a cash substitute."
+VGIT,Vanguard Intermediate-Term Treasury ETF,bond,treasury_intermediate,1,"Holds US Treasury notes with 3-10 years to maturity. Moderate rate sensitivity: gains when rates fall, loses when they rise."
+TLT,iShares 20+ Year Treasury Bond ETF,bond,treasury_long,1,"Holds US Treasury bonds with 20+ years to maturity. The most rate-sensitive mainstream Treasury ETF — big moves in both directions when rates change."
+BND,Vanguard Total Bond Market ETF,bond,aggregate,1,"Holds ~10,000 US investment-grade bonds (Treasuries, corporates, mortgage-backed). One-ticket exposure to the whole US bond market."
+LQD,iShares iBoxx USD Investment Grade Corporate Bond ETF,bond,corporate_ig,1,"Holds investment-grade corporate bonds. Yields more than Treasuries in exchange for credit risk; sells off when credit conditions worsen."
+HYG,iShares iBoxx USD High Yield Corporate Bond ETF,bond,corporate_hy,1,"Holds below-investment-grade (junk) corporate bonds. Higher yield, but tends to fall alongside stocks in market stress."
+TIP,iShares TIPS Bond ETF,bond,tips,1,"Holds US Treasuries whose principal is indexed to CPI inflation. Hedges inflation surprises; still carries interest-rate risk."
+SPY,SPDR S&P 500 ETF Trust,equity,us_large_cap,1,"Holds the ~500 largest US companies (S&P 500). The default building block for US stock market exposure."
+QQQ,Invesco QQQ Trust,equity,nasdaq_100,1,"Holds the 100 largest non-financial Nasdaq companies. Tech/growth heavy — historically higher return and volatility than SPY."
+QLD,ProShares Ultra QQQ,leveraged_equity,nasdaq_100_2x,2,"Delivers 2x the DAILY return of the Nasdaq-100 via derivatives. Long-run result is path-dependent (volatility drag), not simply 2x."
+TQQQ,ProShares UltraPro QQQ,leveraged_equity,nasdaq_100_3x,3,"Delivers 3x the DAILY return of the Nasdaq-100. Extreme drawdowns (over -75% in 2022); long-run return is path-dependent, not 3x."
+VEA,Vanguard FTSE Developed Markets ETF,equity,intl_developed,1,"Holds thousands of developed-market stocks outside the US (Europe, Japan, etc.). Diversifies away from US-only exposure."
+VNQ,Vanguard Real Estate ETF,real_estate,us_reit,1,"Holds US real estate investment trusts (REITs) — companies owning offices, apartments, warehouses. Sensitive to interest rates and property cycles."
+GLD,SPDR Gold Shares,commodity,gold,1,"Each share is backed by physical gold in vaults; tracks the gold price. No yield — often held as a crisis or inflation hedge."
