@@ -52,6 +52,14 @@ if missing:
 # Common window: all required tickers must have data (fair comparison)
 prices = prices[sorted(REQUIRED)].dropna()
 
+STRATEGY_NOTES = {
+    "Buy & Hold (SPY)": "Put everything in on day one and never touch it. The benchmark every other strategy has to justify itself against.",
+    "DCA monthly (QQQ)": "Invest one fixed slice every ~21 trading days. Smooths the entry price; in a steadily rising market it lags buy-and-hold because cash waits on the sidelines.",
+    "60/40 quarterly rebalance (SPY/BND)": "60% stocks / 40% bonds, rebalanced quarterly — trims whatever ran up, adds to whatever lagged. Similar direction to stocks with smaller swings and drawdowns.",
+    "SMA-200 trend (QQQ, cash park)": "Hold QQQ while it closes above its 200-day average, otherwise sit in cash. Tries to sidestep long bear markets; pays for it with whipsaw losses when the market goes sideways. The signal acts one day late (no look-ahead).",
+    "Infinite-buying style (TQQQ, 40 splits, +10% TP)": "Split capital into 40 parts, buy one part daily, sell everything at +10% over average cost. Caps each cycle's upside while keeping full crash exposure once the cash runs out — watch the asymmetry in the drawdown chart.",
+}
+
 equity_curves = {
     "Buy & Hold (SPY)": strat.lump_sum(prices["SPY"]),
     "DCA monthly (QQQ)": strat.dca(prices["QQQ"], every=21),
@@ -80,6 +88,19 @@ fig = px.line(
 fig.update_layout(**PLOTLY_LAYOUT)
 st.plotly_chart(fig, width="stretch")
 
+st.subheader("Drawdown")
+st.caption("How far each strategy sat below its own previous peak — the 'pain' view of the same curves.")
+dd = curves.div(curves.cummax()) - 1.0
+fig_dd = px.line(
+    dd.reset_index().melt(id_vars="price_date", var_name="strategy", value_name="drawdown"),
+    x="price_date",
+    y="drawdown",
+    color="strategy",
+)
+fig_dd.update_layout(**PLOTLY_LAYOUT)
+fig_dd.update_yaxes(tickformat=".0%")
+st.plotly_chart(fig_dd, width="stretch")
+
 st.subheader("Metrics")
 metrics = pd.DataFrame(
     {name: strat.summary_metrics(eq) for name, eq in equity_curves.items()}
@@ -103,6 +124,10 @@ st.dataframe(
         col: st.column_config.TextColumn(col, help=GLOSSARY[col]) for col in display.columns
     },
 )
+
+with st.expander("📖 Strategy guide"):
+    for name, note in STRATEGY_NOTES.items():
+        st.markdown(f"**{name}**  \n{note}")
 
 glossary_expander(["CAGR", "Ann. vol", "Max drawdown", "Sharpe (rf=0)"])
 

@@ -1,55 +1,53 @@
 # ETF Analytics Pipeline
 
-Automated daily ingestion and analytics for a configurable cross-asset ETF universe (US/intl equity, Treasuries, credit, TIPS, gold, REITs — set via `ETF_TICKERS`). Replaces manual spreadsheet downloads with a reproducible raw → staging → mart pipeline and a Streamlit dashboard.
+Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (14 tickers by default: US & international equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and an **LLM-powered natural-language Q&A layer in progress**.
 
 ## Business requirement
 
-> Research and portfolio teams need a consistent daily view of ETF performance and risk (returns, volatility, drawdown) across asset classes without copying prices into Excel.
+> Research and portfolio teams need a consistent daily view of ETF performance and risk (returns, volatility, drawdown) across asset classes without copying prices into Excel — and want to ask questions about the data in plain language.
 
-## Scope
+## Features
 
-| Item | Choice |
-|------|--------|
-| Tickers | Env-driven (`ETF_TICKERS`) — default: 14 cross-asset ETFs (equity·leveraged equity·Treasury·credit·TIPS·gold·REIT) |
-| Frequency | Daily (trading days) |
-| Source | Yahoo Finance via `yfinance` (portfolio / educational use; not for production trading) |
-| Storage | Local `data/raw/` (S3-compatible layout documented in [architecture](docs/architecture.md)) |
-| Warehouse | PostgreSQL (local via Docker) |
-| Transform | dbt (`staging` → `marts`) |
-| Orchestration | Apache Airflow |
-| UI | Streamlit |
+- **Ingest** — yfinance daily prices (10-year window), parquet landing zone + idempotent Postgres upsert; universe is env-driven (`ETF_TICKERS`)
+- **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
+- **Data quality** — 20+ dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
+- **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that commits parquet snapshots
+- **Dashboard** — Streamlit multipage: price/return/volatility charts with a stable 24-color palette, an interactive ticker guide, and metric tooltips backed by a shared glossary
+- **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) backtested by pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
+- **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
+
+## Roadmap — LLM Q&A layer (in progress)
+
+Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
+
+1. **Intent gate** ✅ — Gemini structured output classifies questions into `data_query` / `out_of_scope` (predictions, investment advice, and backtest requests are refused) — see [`qa/`](qa/)
+2. **Text-to-SQL** — schema prompt auto-generated from dbt docs (`schema.yml` + `dim_etf`); generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout
+3. **Charts** — the model returns a chart-spec JSON (validated by pydantic); rendering is done only by whitelisted plotting functions
+
+Design principle: **the LLM emits structured JSON only — generated code is never executed.**
 
 ## Repository layout
 
 ```text
 etf-analytics/
-├── README.md
-├── docs/
-│   ├── architecture.md
-│   └── data-dictionary.md
-├── docker-compose.yml
-├── ingest/                 # Extract & load raw
-├── data/raw/               # Local raw landing zone
-├── dbt/                    # Staging & mart models
-├── airflow/dags/           # Pipeline DAG (wire after tasks work standalone)
+├── docs/                   # architecture.md · data-dictionary.md · images/
+├── docker-compose.yml      # Postgres + Airflow
+├── ingest/                 # fetch_prices.py (env-driven universe) · transform.py
+├── data/raw/               # Parquet landing zone (partitioned by ticker/date)
+├── dbt/                    # staging & mart models · seeds/etf_info.csv · tests
+├── airflow/dags/           # etf_pipeline DAG
 ├── analytics/              # Pure strategy backtest functions (Strategy Lab)
-├── dashboard/              # Streamlit app (multipage: dashboard + Strategy Lab)
-└── tests/                  # Python unit tests for transform logic
+├── dashboard/              # Streamlit app (app.py · db.py · pages/1_Strategy_Lab.py)
+├── qa/                     # LLM Q&A layer (WIP — intent classifier done)
+└── tests/                  # pytest: transform logic + strategy backtests
 ```
-
-## Prerequisites
-
-- Docker & Docker Compose
-- Python **3.10–3.12** for dbt (3.14 is not supported by dbt yet)
-- [dbt-core](https://docs.getdbt.com/) + `dbt-postgres` (after Postgres is up)
-- If port **5432** is already used locally, this project maps Postgres to **5433** (see `.env.example`)
 
 ## Quick start
 
 ### 1. Start infrastructure
 
 ```bash
-cp .env.example .env
+cp .env.example .env        # add GEMINI_API_KEY if using the qa/ layer
 docker compose up -d
 ```
 
@@ -75,7 +73,7 @@ ls -la data/raw/
 ```bash
 cd dbt
 cp profiles.yml.example profiles.yml   # edit if needed
-dbt debug && dbt run && dbt test
+dbt debug && dbt seed && dbt run && dbt test
 cd ..
 ```
 
@@ -89,69 +87,36 @@ pytest tests/ -v
 
 After ingest and dbt succeed manually, unpause `etf_pipeline` in the Airflow UI.
 
-### 7. Streamlit dashboard
+### 7. Streamlit app
 
 ```bash
 streamlit run dashboard/app.py
 ```
 
-Open http://localhost:8501 — compare ETFs across the configured universe.
-
-The **Strategy Lab** page backtests representative strategies (buy & hold, monthly DCA, 60/40 quarterly rebalance, SMA-200 trend, and a simplified "infinite buying" cycle on a leveraged ETF) using pytest-covered pure functions in `analytics/strategies.py`. Simplified rules, no fees/slippage — educational illustration, not investment advice.
+Open http://localhost:8501 — dashboard on the home page, **Strategy Lab** in the sidebar.
 
 ## Screenshots (portfolio demo)
 
-Put PNG files in [`docs/images/`](docs/images/) (see [capture guide](docs/images/README.md)).
+Save PNGs to [`docs/images/`](docs/images/) (see [capture guide](docs/images/README.md)).
 
-### 1. Streamlit dashboard
-
-| View | Metrics |
-|------|---------|
-| **30-day rolling volatility** | Risk comparison |
-| **Latest snapshot** | Most recent vol & drawdown per ticker |
-| **Adjusted close** | Price level over ~3 years |
-| **Cumulative return** | Compounded daily returns |
-
-![30-day rolling volatility and latest snapshot](docs/images/dashboard-volatility-snapshot.png)
-
-![Adjusted close and cumulative return — SGOV vs VGIT](docs/images/dashboard-prices-returns.png)
-
-### 2. Apache Airflow
-
-DAG `etf_pipeline` (ingest → dbt run → dbt test). Save capture as `docs/images/airflow-dag.png`.
-
-![Airflow DAG etf_pipeline](docs/images/airflow-dag.png)
-
-### 3. dbt tests
-
-All project tests passing after `dbt run`. Save terminal capture as `docs/images/dbt-test-success.png`.
-
-![dbt test — 12/12 passed](docs/images/dbt-test-success.png)
-
-## Development order (recommended)
-
-1. Document (`README`, `architecture`, `data-dictionary`) — done at init
-2. Ingest script → confirm `data/raw/` files
-3. dbt staging models → `dbt test`
-4. dbt mart models
-5. Airflow DAG (glue only; each task already works alone)
-6. Streamlit dashboard
+| File | What it shows |
+|------|---------------|
+| `dashboard-overview.png` | 14-ETF dashboard: prices, cumulative returns, volatility |
+| `ticker-guide.png` | Ticker guide: overview table + per-ticker detail card |
+| `strategy-lab.png` | Strategy Lab: equity curves + drawdowns + metrics |
+| `airflow-dag.png` | Airflow `etf_pipeline` run, all tasks green |
+| `dbt-test-success.png` | `dbt test` passing (incl. anomaly tripwire) |
 
 ## GitHub Actions (daily ingest)
 
-Workflow: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices and commits parquet to `data/raw/`.
+Workflow: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices on weekdays after US close and commits parquet to `data/raw/`. If pushes fail with a 403, set **Settings → Actions → Workflow permissions → Read and write**.
 
-If `git push` fails with **403 Permission denied to github-actions[bot]**:
+## Data & limitations
 
-1. Repo **Settings** → **Actions** → **General**
-2. **Workflow permissions** → **Read and write permissions**
-3. Save, then re-run the workflow (**Actions** → **Daily ETF ingest** → **Run workflow**)
-
-## Limitations
-
-- Free market data may be delayed or revised; document as-of dates in mart tables.
-- Not investment advice; for portfolio demonstration only.
+- Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is the primary price for all return math
+- Strategy Lab uses simplified rules — no fees, taxes, or slippage; idle cash at 0%; signals lagged one day (no look-ahead)
+- Not investment advice; for portfolio demonstration and education only
 
 ## License
 
-MIT (add your name in a follow-up commit if needed).
+MIT
