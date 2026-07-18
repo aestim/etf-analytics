@@ -1,0 +1,105 @@
+"""
+Strategy Lab — representative short/mid/long-horizon strategies backtested
+on the mart price data. Pure functions live in analytics/strategies.py
+(pytest-covered); this page only wires data to them and renders results.
+
+Educational illustration — NOT investment advice.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+_ROOT = Path(__file__).resolve().parents[2]
+for _p in (_ROOT / "dashboard", _ROOT / "analytics"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import strategies as strat  # noqa: E402
+from db import PLOTLY_LAYOUT, load_mart_returns  # noqa: E402
+
+st.set_page_config(page_title="Strategy Lab", page_icon="🧪", layout="wide")
+
+st.title("Strategy Lab")
+st.caption(
+    "Representative strategies backtested on mart data (adjusted close). "
+    "Simplified rules, no fees/taxes/slippage, idle cash at 0%. "
+    "**Educational illustration — not investment advice.**"
+)
+
+REQUIRED = {"SPY", "QQQ", "BND", "TQQQ"}
+
+try:
+    returns_df = load_mart_returns()
+except Exception as exc:
+    st.error(f"Could not load data from PostgreSQL: {exc}")
+    st.stop()
+
+prices = returns_df.pivot(index="price_date", columns="ticker", values="adj_close").sort_index()
+missing = REQUIRED - set(prices.columns)
+if missing:
+    st.warning(
+        f"Missing tickers in marts: {', '.join(sorted(missing))}. "
+        "Add them to ETF_TICKERS, re-run ingest + dbt, then refresh."
+    )
+    st.stop()
+
+# Common window: all required tickers must have data (fair comparison)
+prices = prices[sorted(REQUIRED)].dropna()
+
+equity_curves = {
+    "Buy & Hold (SPY)": strat.lump_sum(prices["SPY"]),
+    "DCA monthly (QQQ)": strat.dca(prices["QQQ"], every=21),
+    "60/40 quarterly rebalance (SPY/BND)": strat.rebalance(
+        prices, {"SPY": 0.6, "BND": 0.4}, every=63
+    ),
+    "SMA-200 trend (QQQ, cash park)": strat.sma_trend(prices["QQQ"], window=200),
+    "Infinite-buying style (TQQQ, 40 splits, +10% TP)": strat.infinite_buy(
+        prices["TQQQ"], n_splits=40, take_profit=0.10
+    ),
+}
+
+curves = pd.DataFrame(equity_curves)
+curves.index.name = "price_date"
+
+log_scale = st.checkbox("Log scale", value=True)
+
+fig = px.line(
+    curves.reset_index().melt(id_vars="price_date", var_name="strategy", value_name="equity"),
+    x="price_date",
+    y="equity",
+    color="strategy",
+    title=f"Growth of invested capital · {curves.index.min():%Y-%m-%d} → {curves.index.max():%Y-%m-%d}",
+    log_y=log_scale,
+)
+fig.update_layout(**PLOTLY_LAYOUT)
+st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("Metrics")
+metrics = pd.DataFrame(
+    {name: strat.summary_metrics(eq) for name, eq in equity_curves.items()}
+).T.rename(
+    columns={
+        "cagr": "CAGR",
+        "ann_vol": "Ann. vol",
+        "max_drawdown": "Max drawdown",
+        "sharpe": "Sharpe (rf=0)",
+    }
+)
+st.dataframe(
+    metrics.style.format(
+        {"CAGR": "{:.2%}", "Ann. vol": "{:.2%}", "Max drawdown": "{:.2%}", "Sharpe (rf=0)": "{:.2f}"}
+    ),
+    use_container_width=True,
+)
+
+st.caption(
+    "Why the leveraged strategy caps its upside but not its downside, and why "
+    "trend following looks smoother than it feels — see each function's "
+    "assumptions in `analytics/strategies.py`."
+)
