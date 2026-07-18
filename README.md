@@ -1,16 +1,16 @@
 # ETF Analytics Pipeline
 
-Automated daily ingestion and analytics for **SGOV** (short-term U.S. Treasury ETF) and **VGIT** (intermediate-term U.S. Treasury ETF). Replaces manual spreadsheet downloads with a reproducible raw → staging → mart pipeline and a Streamlit dashboard.
+Automated daily ingestion and analytics for a configurable cross-asset ETF universe (US/intl equity, Treasuries, credit, TIPS, gold, REITs — set via `ETF_TICKERS`). Replaces manual spreadsheet downloads with a reproducible raw → staging → mart pipeline and a Streamlit dashboard.
 
 ## Business requirement
 
-> Research and portfolio teams need a consistent daily view of SGOV vs VGIT performance and risk (returns, volatility, drawdown) without copying prices into Excel.
+> Research and portfolio teams need a consistent daily view of ETF performance and risk (returns, volatility, drawdown) across asset classes without copying prices into Excel.
 
 ## Scope
 
 | Item | Choice |
 |------|--------|
-| Tickers | `SGOV`, `VGIT` |
+| Tickers | Env-driven (`ETF_TICKERS`) — default: 14 cross-asset ETFs (equity·leveraged equity·Treasury·credit·TIPS·gold·REIT) |
 | Frequency | Daily (trading days) |
 | Source | Yahoo Finance via `yfinance` (portfolio / educational use; not for production trading) |
 | Storage | Local `data/raw/` (S3-compatible layout documented in [architecture](docs/architecture.md)) |
@@ -32,7 +32,8 @@ etf-analytics/
 ├── data/raw/               # Local raw landing zone
 ├── dbt/                    # Staging & mart models
 ├── airflow/dags/           # Pipeline DAG (wire after tasks work standalone)
-├── dashboard/              # Streamlit app
+├── analytics/              # Pure strategy backtest functions (Strategy Lab)
+├── dashboard/              # Streamlit app (multipage: dashboard + Strategy Lab)
 └── tests/                  # Python unit tests for transform logic
 ```
 
@@ -54,34 +55,33 @@ docker compose up -d
 
 Wait until Airflow UI is available at http://localhost:8080 (default credentials in `.env.example`).
 
-### 2. Install ingest dependencies
+### 2. Install dependencies (one venv at repo root)
 
 ```bash
-cd ingest
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python -m venv .venv          # skip if .venv already exists
+source .venv/bin/activate
+pip install -r ingest/requirements.txt -r dashboard/requirements.txt -r requirements-dev.txt
 ```
 
 ### 3. Run ingest (verify raw files)
 
 ```bash
-python fetch_sgov_vgit.py
-ls -la ../data/raw/
+python ingest/fetch_prices.py
+ls -la data/raw/
 ```
 
 ### 4. Run dbt
 
 ```bash
-cd ../dbt
+cd dbt
 cp profiles.yml.example profiles.yml   # edit if needed
 dbt debug && dbt run && dbt test
+cd ..
 ```
 
-### 5. Run unit tests (transform logic)
+### 5. Run unit tests (transform + strategy logic)
 
 ```bash
-cd ..
-pip install pytest pandas numpy
 pytest tests/ -v
 ```
 
@@ -92,12 +92,12 @@ After ingest and dbt succeed manually, unpause `etf_pipeline` in the Airflow UI.
 ### 7. Streamlit dashboard
 
 ```bash
-cd dashboard
-pip install -r requirements.txt
-streamlit run app.py
+streamlit run dashboard/app.py
 ```
 
-Open http://localhost:8501 — compare **SGOV** (short Treasury) vs **VGIT** (intermediate Treasury).
+Open http://localhost:8501 — compare ETFs across the configured universe.
+
+The **Strategy Lab** page backtests representative strategies (buy & hold, monthly DCA, 60/40 quarterly rebalance, SMA-200 trend, and a simplified "infinite buying" cycle on a leveraged ETF) using pytest-covered pure functions in `analytics/strategies.py`. Simplified rules, no fees/slippage — educational illustration, not investment advice.
 
 ## Screenshots (portfolio demo)
 
