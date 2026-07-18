@@ -95,17 +95,25 @@ streamlit run dashboard/app.py
 
 Open http://localhost:8501 — dashboard on the home page, **Strategy Lab** in the sidebar.
 
-## Screenshots (portfolio demo)
+## Screenshots
 
-Save PNGs to [`docs/images/`](docs/images/) (see [capture guide](docs/images/README.md)).
+### Dashboard — 14-ETF cross-asset view
 
-| File | What it shows |
-|------|---------------|
-| `dashboard-overview.png` | 14-ETF dashboard: prices, cumulative returns, volatility |
-| `ticker-guide.png` | Ticker guide: overview table + per-ticker detail card |
-| `strategy-lab.png` | Strategy Lab: equity curves + drawdowns + metrics |
-| `airflow-dag.png` | Airflow `etf_pipeline` run, all tasks green |
-| `dbt-test-success.png` | `dbt test` passing (incl. anomaly tripwire) |
+![Dashboard: prices, cumulative returns, rolling volatility](docs/images/dashboard-overview.png)
+
+### Ticker guide
+
+![Ticker guide: overview table with per-ticker detail card](docs/images/ticker-guide.png)
+
+### Strategy Lab
+
+![Strategy Lab: equity curves, drawdowns, and metrics](docs/images/strategy-lab.png)
+
+### Pipeline
+
+![Airflow etf_pipeline run, all tasks green](docs/images/airflow-dag.png)
+
+![dbt test passing, including the daily-return anomaly tripwire](docs/images/dbt-test-success.png)
 
 ## GitHub Actions (daily ingest)
 
