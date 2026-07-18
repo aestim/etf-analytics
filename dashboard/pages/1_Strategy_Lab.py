@@ -21,7 +21,7 @@ for _p in (_ROOT / "dashboard", _ROOT / "analytics"):
         sys.path.insert(0, str(_p))
 
 import strategies as strat  # noqa: E402
-from db import PLOTLY_LAYOUT, load_mart_returns  # noqa: E402
+from db import GLOSSARY, PLOTLY_LAYOUT, glossary_expander, load_mart_returns  # noqa: E402
 
 st.set_page_config(page_title="Strategy Lab", page_icon="🧪", layout="wide")
 
@@ -91,12 +91,20 @@ metrics = pd.DataFrame(
         "sharpe": "Sharpe (rf=0)",
     }
 )
+display = metrics.copy()
+for col in ("CAGR", "Ann. vol", "Max drawdown"):
+    display[col] = display[col].map("{:.2%}".format)
+display["Sharpe (rf=0)"] = display["Sharpe (rf=0)"].map("{:.2f}".format)
+
 st.dataframe(
-    metrics.style.format(
-        {"CAGR": "{:.2%}", "Ann. vol": "{:.2%}", "Max drawdown": "{:.2%}", "Sharpe (rf=0)": "{:.2f}"}
-    ),
+    display,
     use_container_width=True,
+    column_config={
+        col: st.column_config.TextColumn(col, help=GLOSSARY[col]) for col in display.columns
+    },
 )
+
+glossary_expander(["CAGR", "Ann. vol", "Max drawdown", "Sharpe (rf=0)"])
 
 st.caption(
     "Why the leveraged strategy caps its upside but not its downside, and why "

@@ -9,7 +9,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from db import PLOTLY_LAYOUT, load_dim_etf, load_mart_returns, load_mart_risk, ticker_color_map
+from db import (
+    GLOSSARY,
+    PLOTLY_LAYOUT,
+    glossary_expander,
+    load_dim_etf,
+    load_mart_returns,
+    load_mart_risk,
+    ticker_color_map,
+)
 
 
 def line_chart(df: pd.DataFrame, y: str, title: str, colors: dict | None = None) -> None:
@@ -81,4 +89,16 @@ latest["price_date"] = latest["price_date"].dt.strftime("%Y-%m-%d")
 latest["rolling_vol_30d"] = latest["rolling_vol_30d"].round(4)
 latest["drawdown"] = latest["drawdown"].round(4)
 
-st.dataframe(latest, use_container_width=True, hide_index=True)
+st.dataframe(
+    latest,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "rolling_vol_30d": st.column_config.NumberColumn(
+            "rolling_vol_30d", help=GLOSSARY["rolling_vol_30d"]
+        ),
+        "drawdown": st.column_config.NumberColumn("drawdown", help=GLOSSARY["drawdown"]),
+    },
+)
+
+glossary_expander(["adj_close", "cum_return", "rolling_vol_30d", "drawdown"])

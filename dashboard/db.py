@@ -24,6 +24,25 @@ PLOTLY_LAYOUT = dict(
 )
 
 
+GLOSSARY = {
+    "CAGR": "Compound Annual Growth Rate — the constant yearly return that would turn the starting value into the ending value over the period.",
+    "Ann. vol": "Annualized volatility — standard deviation of daily returns × √252. Higher = bigger day-to-day swings.",
+    "Max drawdown": "Worst peak-to-trough decline of the curve. −50% means the value halved from its previous peak before recovering.",
+    "Sharpe (rf=0)": "Average return per unit of volatility, risk-free rate assumed 0. Rough guide: below 0.5 weak, around 1 solid.",
+    "adj_close": "Close price retroactively adjusted for splits and distributions — the correct series for return math.",
+    "cum_return": "Growth of 1 unit invested at the start, compounding daily returns (0.5 = +50%).",
+    "rolling_vol_30d": "Standard deviation of daily returns over the trailing 30 trading days. Daily scale — multiply by √252 to annualize.",
+    "drawdown": "Decline from the running maximum adjusted close. 0 = at peak; −0.12 = 12% below the peak.",
+}
+
+
+def glossary_expander(keys, title: str = "📖 Metrics guide") -> None:
+    """Render an expander explaining the given GLOSSARY terms."""
+    with st.expander(title):
+        for k in keys:
+            st.markdown(f"**{k}** — {GLOSSARY[k]}")
+
+
 def ticker_color_map(tickers) -> dict[str, str]:
     """Stable, distinct color per ticker.
 
