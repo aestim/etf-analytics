@@ -54,16 +54,21 @@ def ticker_color_map(tickers) -> dict[str, str]:
     return {t: palette[i % len(palette)] for i, t in enumerate(sorted(tickers))}
 
 
-def pg_conn():
-    import psycopg2
+@st.cache_resource
+def get_engine():
+    """SQLAlchemy engine (pandas requires a SQLAlchemy connectable)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import URL
 
-    return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=os.getenv("POSTGRES_PORT", "5433"),
-        dbname=os.getenv("POSTGRES_DB", "etf_analytics"),
-        user=os.getenv("POSTGRES_USER", "etf"),
+    url = URL.create(
+        "postgresql+psycopg2",
+        username=os.getenv("POSTGRES_USER", "etf"),
         password=os.getenv("POSTGRES_PASSWORD", "etf"),
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        port=int(os.getenv("POSTGRES_PORT", "5433")),
+        database=os.getenv("POSTGRES_DB", "etf_analytics"),
     )
+    return create_engine(url, pool_pre_ping=True)
 
 
 @st.cache_data(ttl=300)
@@ -73,8 +78,7 @@ def load_mart_returns() -> pd.DataFrame:
         from public_marts.mart_etf_returns
         order by ticker, price_date
     """
-    with pg_conn() as conn:
-        df = pd.read_sql(query, conn)
+    df = pd.read_sql(query, get_engine())
     df["price_date"] = pd.to_datetime(df["price_date"])
     return df
 
@@ -86,8 +90,7 @@ def load_dim_etf() -> pd.DataFrame:
         from public_marts.dim_etf
         order by asset_class, sub_class, ticker
     """
-    with pg_conn() as conn:
-        return pd.read_sql(query, conn)
+    return pd.read_sql(query, get_engine())
 
 
 @st.cache_data(ttl=300)
@@ -97,7 +100,6 @@ def load_mart_risk() -> pd.DataFrame:
         from public_marts.mart_etf_risk_metrics
         order by ticker, price_date
     """
-    with pg_conn() as conn:
-        df = pd.read_sql(query, conn)
+    df = pd.read_sql(query, get_engine())
     df["price_date"] = pd.to_datetime(df["price_date"])
     return df

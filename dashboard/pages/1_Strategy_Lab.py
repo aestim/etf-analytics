@@ -78,7 +78,7 @@ fig = px.line(
     log_y=log_scale,
 )
 fig.update_layout(**PLOTLY_LAYOUT)
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width="stretch")
 
 st.subheader("Metrics")
 metrics = pd.DataFrame(
@@ -98,7 +98,7 @@ display["Sharpe (rf=0)"] = display["Sharpe (rf=0)"].map("{:.2f}".format)
 
 st.dataframe(
     display,
-    use_container_width=True,
+    width="stretch",
     column_config={
         col: st.column_config.TextColumn(col, help=GLOSSARY[col]) for col in display.columns
     },

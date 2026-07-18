@@ -24,7 +24,7 @@ def line_chart(df: pd.DataFrame, y: str, colors: dict | None = None) -> None:
     # No figure title — the st.subheader above each chart already labels it
     fig = px.line(df, x="price_date", y=y, color="ticker", color_discrete_map=colors)
     fig.update_layout(**PLOTLY_LAYOUT)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 st.set_page_config(
@@ -56,7 +56,7 @@ with st.expander("📖 Ticker guide"):
         dim = load_dim_etf()
         st.dataframe(
             dim.drop(columns=["description"]),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "asset_class": st.column_config.TextColumn(
@@ -115,7 +115,7 @@ latest["drawdown"] = latest["drawdown"].round(4)
 
 st.dataframe(
     latest,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "rolling_vol_30d": st.column_config.NumberColumn(
