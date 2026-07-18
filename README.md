@@ -1,6 +1,6 @@
 # ETF Analytics Pipeline
 
-🔗 **Live demo:** _deploy to Streamlit Community Cloud and put the URL here_
+🔗 **Live demo:** [etf-analytics-pipeline.streamlit.app](https://etf-analytics-pipeline.streamlit.app/) — runs in demo mode (parquet snapshots, refreshed daily by CI)
 
 Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (14 tickers by default: US & international equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and an **LLM-powered natural-language Q&A layer in progress**.
 
