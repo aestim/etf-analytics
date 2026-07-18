@@ -2,14 +2,19 @@ version: 2
 
 models:
   - name: stg_etf_prices
-    description: Cleaned daily ETF prices (one row per ticker per date)
+    description: Cleaned daily ETF prices — one row per ticker per trading date. Types cast, tickers uppercased, duplicates removed.
     columns:
       - name: ticker
+        description: ETF ticker symbol, uppercase (e.g. SPY, TLT, GLD)
         tests: [not_null]
       - name: price_date
+        description: Trading session date (US market calendar, no intraday)
         tests: [not_null]
       - name: adj_close
+        description: Split/dividend-adjusted close price in USD — the primary price for all analysis
         tests: [not_null]
+      - name: volume
+        description: Shares traded during the session
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

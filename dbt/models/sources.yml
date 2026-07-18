@@ -5,11 +5,26 @@ sources:
     schema: raw
     tables:
       - name: etf_prices
-        description: Daily ETF OHLCV from ingest
+        description: Daily ETF OHLCV rows loaded by ingest (yfinance), upserted on (ticker, price_date)
         columns:
           - name: ticker
+            description: ETF ticker symbol
             tests: [not_null]
           - name: price_date
+            description: Trading session date
             tests: [not_null]
           - name: adj_close
+            description: Split/dividend-adjusted close price (primary price)
             tests: [not_null]
+          - name: open
+            description: Session open price
+          - name: high
+            description: Session high price
+          - name: low
+            description: Session low price
+          - name: close
+            description: Unadjusted close price
+          - name: volume
+            description: Shares traded
+          - name: ingested_at
+            description: UTC timestamp of the load

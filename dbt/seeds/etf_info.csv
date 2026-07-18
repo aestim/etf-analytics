@@ -1,0 +1,15 @@
+ticker,name,asset_class,sub_class,leverage,description
+SGOV,iShares 0-3 Month Treasury Bond ETF,bond,treasury_short,1,Ultra-short US T-bills; cash-like parking with minimal rate risk
+VGIT,Vanguard Intermediate-Term Treasury ETF,bond,treasury_intermediate,1,US Treasuries with 3-10y maturities; moderate duration
+TLT,iShares 20+ Year Treasury Bond ETF,bond,treasury_long,1,Long-duration US Treasuries; highly sensitive to interest rates
+BND,Vanguard Total Bond Market ETF,bond,aggregate,1,Broad US investment-grade bond market (Treasuries + corporates + MBS)
+LQD,iShares iBoxx USD Investment Grade Corporate Bond ETF,bond,corporate_ig,1,US investment-grade corporate bonds; credit spread over Treasuries
+HYG,iShares iBoxx USD High Yield Corporate Bond ETF,bond,corporate_hy,1,US high-yield (junk) corporate bonds; equity-like credit risk
+TIP,iShares TIPS Bond ETF,bond,tips,1,US inflation-protected Treasuries; principal indexed to CPI
+SPY,SPDR S&P 500 ETF Trust,equity,us_large_cap,1,US large-cap equities tracking the S&P 500
+QQQ,Invesco QQQ Trust,equity,nasdaq_100,1,Nasdaq-100; tech- and growth-heavy US large caps
+QLD,ProShares Ultra QQQ,leveraged_equity,nasdaq_100_2x,2,2x DAILY Nasdaq-100 returns; long-run result is path-dependent (volatility drag)
+TQQQ,ProShares UltraPro QQQ,leveraged_equity,nasdaq_100_3x,3,3x DAILY Nasdaq-100 returns; extreme drawdowns; not a 3x long-term tracker
+VEA,Vanguard FTSE Developed Markets ETF,equity,intl_developed,1,Developed-market equities outside the US (Europe/Japan/etc.)
+VNQ,Vanguard Real Estate ETF,real_estate,us_reit,1,US listed real estate investment trusts (REITs)
+GLD,SPDR Gold Shares,commodity,gold,1,Physical gold bullion exposure

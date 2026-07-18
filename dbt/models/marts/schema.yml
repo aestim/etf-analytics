@@ -1,24 +1,49 @@
 version: 2
 
 models:
-  - name: mart_etf_returns
-    description: Daily simple returns by ticker
+  - name: dim_etf
+    description: Ticker reference dimension (one row per ETF). Join on ticker to filter or group the fact marts by asset class, sub class, or leverage.
     columns:
       - name: ticker
+        description: ETF ticker symbol, uppercase — join key to mart_etf_returns and mart_etf_risk_metrics
+        tests: [not_null, unique]
+      - name: name
+        description: Full fund name
+      - name: asset_class
+        description: "Broad asset class: equity, leveraged_equity, bond, real_estate, commodity"
+      - name: sub_class
+        description: "Finer grouping, e.g. treasury_short / treasury_long / corporate_hy / nasdaq_100_3x / us_reit / gold"
+      - name: leverage
+        description: Daily leverage multiple (1 = unleveraged, 2 = 2x daily, 3 = 3x daily)
+      - name: description
+        description: One-line plain-language summary of what the fund holds
+  - name: mart_etf_returns
+    description: Daily adjusted close and simple return per ETF. One row per ticker per trading date. Use for price levels, returns, and cumulative performance.
+    columns:
+      - name: ticker
+        description: ETF ticker symbol, uppercase (e.g. SPY, TLT, GLD)
         tests: [not_null]
       - name: price_date
+        description: Trading session date (US market calendar)
         tests: [not_null]
+      - name: adj_close
+        description: Split/dividend-adjusted close price in USD
       - name: daily_return
-        description: Null on first observation per ticker
+        description: Simple daily return, adj_close / previous adj_close - 1 (e.g. 0.01 = +1%). NULL on each ticker's first observation.
 
   - name: mart_etf_risk_metrics
-    description: Rolling volatility and drawdown
+    description: Rolling risk metrics per ETF per trading date, derived from mart_etf_returns. Use for volatility and drawdown questions.
     columns:
       - name: ticker
+        description: ETF ticker symbol, uppercase
         tests: [not_null]
       - name: price_date
+        description: Trading session date the metrics apply to
         tests: [not_null]
       - name: rolling_vol_30d
+        description: Rolling sample standard deviation of daily returns over the last 30 trading days (daily volatility, NOT annualized; multiply by sqrt(252) to annualize). Computed over fewer days at the start of a series.
       - name: drawdown
+        description: Decline from the running maximum adjusted close, as a negative fraction (0 = at peak, -0.12 = 12% below peak)
       - name: as_of_date
+        description: Equals price_date; retained for data-freshness checks. Prefer price_date in queries.
         tests: [not_null]
