@@ -30,6 +30,14 @@ models:
         description: Split/dividend-adjusted close price in USD
       - name: daily_return
         description: Simple daily return, adj_close / previous adj_close - 1 (e.g. 0.01 = +1%). NULL on each ticker's first observation.
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -0.75
+                max_value: 0.75
+              config:
+                severity: warn
+                where: "daily_return is not null"
 
   - name: mart_etf_risk_metrics
     description: Rolling risk metrics per ETF per trading date, derived from mart_etf_returns. Use for volatility and drawdown questions.
