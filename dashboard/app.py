@@ -53,32 +53,19 @@ except Exception as exc:
 
 with st.expander("📖 Ticker guide"):
     try:
-        st.dataframe(
-            load_dim_etf(),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "ticker": st.column_config.TextColumn(
-                    "ticker", help="Exchange symbol — join key across all mart tables"
-                ),
-                "name": st.column_config.TextColumn("name", help="Full fund name"),
-                "asset_class": st.column_config.TextColumn(
-                    "asset_class",
-                    help="Broad bucket (equity / leveraged_equity / bond / real_estate / commodity). Compare like with like — a bond ETF having lower volatility than stocks is expected, not insight.",
-                ),
-                "sub_class": st.column_config.TextColumn(
-                    "sub_class",
-                    help="Finer machine-readable grouping, used as a SQL filter key. E.g. treasury_long = 20y+ US Treasuries, corporate_hy = junk bonds, nasdaq_100_3x = 3x daily Nasdaq-100.",
-                ),
-                "leverage": st.column_config.NumberColumn(
-                    "leverage",
-                    help="Daily leverage multiple. 1 = unleveraged. 2/3 = amplifies each DAY's move — long-run returns are path-dependent, not simply 2x/3x.",
-                ),
-                "description": st.column_config.TextColumn(
-                    "description", help="What the fund holds and how it tends to behave"
-                ),
-            },
+        dim = load_dim_etf()
+        st.caption(
+            "Codes in parentheses (asset class / sub class) are the machine-readable "
+            "filter keys the SQL layer uses. Leveraged ETFs multiply DAILY moves — "
+            "long-run returns are path-dependent, not 2x/3x."
         )
+        for asset_class, grp in dim.groupby("asset_class", sort=True):
+            st.markdown(f"**{asset_class.replace('_', ' ').title()}**")
+            lines = []
+            for _, r in grp.iterrows():
+                lev = f" · {int(r.leverage)}x daily" if r.leverage > 1 else ""
+                lines.append(f"- **{r.ticker}** ({r.sub_class}{lev}) — {r.description}")
+            st.markdown("\n".join(lines))
     except Exception:
         st.caption("Run `dbt seed && dbt run` to build the dim_etf reference table.")
 
