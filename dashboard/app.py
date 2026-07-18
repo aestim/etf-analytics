@@ -20,8 +20,9 @@ from db import (
 )
 
 
-def line_chart(df: pd.DataFrame, y: str, title: str, colors: dict | None = None) -> None:
-    fig = px.line(df, x="price_date", y=y, color="ticker", title=title, color_discrete_map=colors)
+def line_chart(df: pd.DataFrame, y: str, colors: dict | None = None) -> None:
+    # No figure title — the st.subheader above each chart already labels it
+    fig = px.line(df, x="price_date", y=y, color="ticker", color_discrete_map=colors)
     fig.update_layout(**PLOTLY_LAYOUT)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -66,7 +67,7 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Adjusted close")
-    line_chart(filtered, "adj_close", "Adjusted close", COLORS)
+    line_chart(filtered, "adj_close", COLORS)
 
 with col2:
     st.subheader("Cumulative return")
@@ -74,10 +75,10 @@ with col2:
     cum["cum_return"] = cum.groupby("ticker")["daily_return"].transform(
         lambda s: (1 + s.fillna(0)).cumprod() - 1
     )
-    line_chart(cum, "cum_return", "Cumulative return", COLORS)
+    line_chart(cum, "cum_return", COLORS)
 
 st.subheader("30-day rolling volatility")
-line_chart(risk_filtered, "rolling_vol_30d", "30-day rolling volatility", COLORS)
+line_chart(risk_filtered, "rolling_vol_30d", COLORS)
 
 st.subheader("Latest snapshot")
 latest = (
