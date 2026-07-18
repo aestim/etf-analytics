@@ -54,18 +54,29 @@ except Exception as exc:
 with st.expander("📖 Ticker guide"):
     try:
         dim = load_dim_etf()
-        st.caption(
-            "Codes in parentheses (asset class / sub class) are the machine-readable "
-            "filter keys the SQL layer uses. Leveraged ETFs multiply DAILY moves — "
-            "long-run returns are path-dependent, not 2x/3x."
+        st.dataframe(
+            dim.drop(columns=["description"]),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "asset_class": st.column_config.TextColumn(
+                    "asset_class", help="Broad bucket — compare like with like"
+                ),
+                "sub_class": st.column_config.TextColumn(
+                    "sub_class", help="Machine-readable filter key used by the SQL layer"
+                ),
+                "leverage": st.column_config.NumberColumn(
+                    "leverage", help="Daily leverage multiple (1 = unleveraged)"
+                ),
+            },
         )
-        for asset_class, grp in dim.groupby("asset_class", sort=True):
-            st.markdown(f"**{asset_class.replace('_', ' ').title()}**")
-            lines = []
-            for _, r in grp.iterrows():
-                lev = f" · {int(r.leverage)}x daily" if r.leverage > 1 else ""
-                lines.append(f"- **{r.ticker}** ({r.sub_class}{lev}) — {r.description}")
-            st.markdown("\n".join(lines))
+        pick = st.selectbox("Show details for", dim["ticker"], label_visibility="collapsed")
+        row = dim.set_index("ticker").loc[pick]
+        lev = f" · {int(row['leverage'])}x daily" if row["leverage"] > 1 else ""
+        st.info(
+            f"**{pick} — {row['name']}**  \n"
+            f"`{row['asset_class']} / {row['sub_class']}`{lev}\n\n{row['description']}"
+        )
     except Exception:
         st.caption("Run `dbt seed && dbt run` to build the dim_etf reference table.")
 
