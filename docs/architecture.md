@@ -24,7 +24,7 @@ flowchart LR
   end
 
   subgraph ingest
-    PY[ingest/fetch_sgov_vgit.py]
+    PY[ingest/fetch_prices.py]
   end
 
   subgraph storage
@@ -68,7 +68,7 @@ DAG id: `etf_pipeline`
 
 | Task | Command / operator | Depends on |
 |------|-------------------|------------|
-| `extract_load_raw` | Bash: `python ingest/fetch_sgov_vgit.py` | — |
+| `extract_load_raw` | Bash: `python ingest/fetch_prices.py` | — |
 | `dbt_run` | Bash: `dbt run --project-dir dbt` | `extract_load_raw` |
 | `dbt_test` | Bash: `dbt test --project-dir dbt` | `dbt_run` |
 

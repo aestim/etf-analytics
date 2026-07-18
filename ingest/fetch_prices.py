@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fetch SGOV and VGIT daily prices from Yahoo Finance.
+Fetch daily ETF prices from Yahoo Finance (tickers from ETF_TICKERS env).
 Writes raw parquet under data/raw/{ticker}/ and optionally loads Postgres.
 """
 

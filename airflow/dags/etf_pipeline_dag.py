@@ -2,7 +2,7 @@
 ETF pipeline DAG — enable only after each task succeeds from the CLI.
 
 Tasks:
-  1. extract_load_raw  — ingest/fetch_sgov_vgit.py
+  1. extract_load_raw  — ingest/fetch_prices.py
   2. dbt_run           — dbt run
   3. dbt_test          — dbt test
 """
@@ -25,7 +25,7 @@ DEFAULT_ARGS = {
 }
 
 REPO_ROOT = "/opt/airflow"
-INGEST_SCRIPT = f"{REPO_ROOT}/ingest/fetch_sgov_vgit.py"
+INGEST_SCRIPT = f"{REPO_ROOT}/ingest/fetch_prices.py"
 DBT_DIR = f"{REPO_ROOT}/dbt"
 DBT_BIN = "/home/airflow/.local/bin/dbt"
 
