@@ -2,7 +2,7 @@
 
 🔗 **Live demo:** [etf-analytics-pipeline.streamlit.app](https://etf-analytics-pipeline.streamlit.app/) — runs in demo mode (parquet snapshots, refreshed daily by CI)
 
-Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (14 tickers by default: US & international equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and an **LLM-powered natural-language Q&A layer in progress**.
+Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (17 tickers by default: US large/small-cap, dividend, international developed & emerging equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and an **LLM-powered natural-language Q&A layer in progress**.
 
 ## Business requirement
 
@@ -10,7 +10,7 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 
 ## Features
 
-- **Ingest** — yfinance daily prices (10-year window), parquet landing zone + idempotent Postgres upsert; universe is env-driven (`ETF_TICKERS`)
+- **Ingest** — yfinance daily prices (10-year window, one batched request for the whole universe), parquet landing zone + idempotent Postgres upsert; universe is env-driven (`ETF_TICKERS`)
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
 - **Data quality** — 20+ dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that commits parquet snapshots
@@ -100,7 +100,7 @@ Open http://localhost:8501 — dashboard on the home page, **Strategy Lab** in t
 
 ## Screenshots
 
-### Dashboard — 14-ETF cross-asset view
+### Dashboard — cross-asset view
 
 <img src="docs/images/dashboard-overview.png" alt="Dashboard: prices, cumulative returns, rolling volatility" width="850">
 

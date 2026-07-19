@@ -11,5 +11,8 @@ QQQ,Invesco QQQ Trust,equity,nasdaq_100,1,"Holds the 100 largest non-financial N
 QLD,ProShares Ultra QQQ,leveraged_equity,nasdaq_100_2x,2,"Delivers 2x the DAILY return of the Nasdaq-100 via derivatives. Long-run result is path-dependent (volatility drag), not simply 2x."
 TQQQ,ProShares UltraPro QQQ,leveraged_equity,nasdaq_100_3x,3,"Delivers 3x the DAILY return of the Nasdaq-100. Extreme drawdowns (over -75% in 2022); long-run return is path-dependent, not 3x."
 VEA,Vanguard FTSE Developed Markets ETF,equity,intl_developed,1,"Holds thousands of developed-market stocks outside the US (Europe, Japan, etc.). Diversifies away from US-only exposure."
+SCHD,Schwab US Dividend Equity ETF,equity,us_dividend,1,"Holds ~100 US companies with 10+ consecutive years of dividends and strong balance sheets. Total return = price + dividends; tilts toward value sectors."
+VWO,Vanguard FTSE Emerging Markets ETF,equity,emerging_markets,1,"Holds thousands of emerging-market stocks (China, India, Taiwan, Brazil). Higher growth potential with currency and political risk; tends to struggle when the US dollar is strong."
+IWM,iShares Russell 2000 ETF,equity,us_small_cap,1,"Holds ~2,000 US small-cap companies. More domestically focused and economically sensitive than large caps — swings harder in both directions."
 VNQ,Vanguard Real Estate ETF,real_estate,us_reit,1,"Holds US real estate investment trusts (REITs) — companies owning offices, apartments, warehouses. Sensitive to interest rates and property cycles."
 GLD,SPDR Gold Shares,commodity,gold,1,"Each share is backed by physical gold in vaults; tracks the gold price. No yield — often held as a crisis or inflation hedge."
