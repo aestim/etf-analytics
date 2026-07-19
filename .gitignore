@@ -68,6 +68,6 @@ Thumbs.db
 # Streamlit
 .streamlit/secrets.toml
 
-# QA runner logs (week2_results.md는 커밋, 상세 jsonl은 로컬)
+# QA runner logs (week2_results.md is committed; detailed jsonl stays local)
 qa/logs/
 qa/charts/

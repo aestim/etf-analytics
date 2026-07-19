@@ -1,4 +1,4 @@
-"""qa/chart_spec.py + qa/render.py — 검증·폴백·렌더러 4종 (LLM·DB 불필요)."""
+"""qa/chart_spec.py + qa/render.py — validation, fallback, four renderers (no LLM/DB)."""
 
 import pandas as pd
 import pytest
@@ -18,7 +18,7 @@ def df():
     )
 
 
-# --- validate_spec: 통과 -----------------------------------------------------
+# --- validate_spec: passes --------------------------------------------------
 
 
 def test_valid_line_spec_passes(df):
@@ -27,20 +27,20 @@ def test_valid_line_spec_passes(df):
 
 
 def test_bad_group_by_is_dropped_but_chart_survives(df):
-    spec = ChartSpec(chart_type="line", x="price_date", y="rolling_vol_30d", group_by="없는컬럼")
+    spec = ChartSpec(chart_type="line", x="price_date", y="rolling_vol_30d", group_by="no_such_col")
     out = validate_spec(spec, df)
     assert out.chart_type == "line" and out.group_by is None
 
 
-# --- validate_spec: 표 폴백 --------------------------------------------------
+# --- validate_spec: table fallback ------------------------------------------
 
 
 @pytest.mark.parametrize(
     "spec",
     [
-        ChartSpec(chart_type="line", x="없는컬럼", y="rolling_vol_30d"),  # 없는 x
-        ChartSpec(chart_type="line", x="price_date", y="ticker"),  # y 비수치
-        ChartSpec(chart_type="bar", x=None, y=None),  # 미지정
+        ChartSpec(chart_type="line", x="no_such_col", y="rolling_vol_30d"),  # unknown x
+        ChartSpec(chart_type="line", x="price_date", y="ticker"),  # non-numeric y
+        ChartSpec(chart_type="bar", x=None, y=None),  # unspecified
     ],
     ids=["missing-col", "non-numeric-y", "unspecified"],
 )
@@ -48,14 +48,14 @@ def test_invalid_specs_fall_back_to_table(spec, df):
     assert validate_spec(spec, df).chart_type == "table"
 
 
-# --- render: 4종 -------------------------------------------------------------
+# --- render: all four -------------------------------------------------------
 
 
 @pytest.mark.parametrize("chart_type", ["line", "bar", "scatter"])
 def test_renderers_return_figure(chart_type, df):
     spec = ChartSpec(chart_type=chart_type, x="price_date", y="rolling_vol_30d", title="t")
     fig = render(spec, df)
-    assert fig is not None and fig.data  # plotly Figure에 trace가 있음
+    assert fig is not None and fig.data  # the plotly Figure has traces
 
 
 def test_table_spec_renders_none(df):

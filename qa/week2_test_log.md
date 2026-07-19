@@ -1,17 +1,19 @@
-# Week 2 실전 테스트 — 관찰 노트
+# Week 2 field test — observation notes
 
-> 실행은 자동: `python qa/run_week2.py` (질문 20개 = 러너 안에 정의)
-> 판정 표는 `week2_results.md`에 실행마다 누적, SQL 포함 상세는 `logs/*.jsonl`.
-> 사람 몫은 하나 — ✅로 실행된 질문의 SQL·결과를 훑고 **답이 틀린 것(⚠️)** 을
-> `week2_results.md`의 '정확성' 칸에 이유와 함께 적는 것.
+> Execution is automated: `python qa/run_week2.py` (the 20 questions live in the runner).
+> Verdict tables accumulate in `week2_results.md`; full detail incl. SQL in `logs/*.jsonl`.
+> The one human job: skim the SQL/results of questions marked ✅ and record any
+> **wrong answers (⚠️)** in the Accuracy column of `week2_results.md`, with a reason.
 
-## 관찰 정리 (돌린 후 여기 채우기)
+## Observations (fill in after runs)
 
-- 잘 되는 패턴:
-- 안 되는 패턴 (⚠️/❌ 모음):
-- 프롬프트 고칠 아이디어 (Week 5에서 실험):
+- Patterns that work well:
+- Patterns that fail (collect the ⚠️/❌ cases):
+- Prompt improvement ideas (to experiment with in Week 5):
 
-## 기록 요령
+## Notes on recording
 
-- ⚠️가 제일 귀한 데이터 — "실행은 되는데 틀리는" 케이스가 Week 5 golden set의 핵심 문항이 된다
-- 같은 질문을 두 번 돌려 SQL이 달라지는지도 관찰 (LLM 비결정성 — 면접 소재)
+- ⚠️ cases are the most valuable data — "executes but wrong" questions become the
+  core items of the Week 5 golden set
+- Also try running the same question twice and compare the generated SQL
+  (LLM non-determinism — good interview material)

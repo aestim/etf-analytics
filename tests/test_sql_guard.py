@@ -1,4 +1,4 @@
-"""qa/sql_guard.py — LLM 출력 불신 원칙이 실제로 작동하는지 검증."""
+"""qa/sql_guard.py — verify the never-trust-LLM-output principle actually holds."""
 
 import pytest
 
@@ -7,7 +7,7 @@ from sql_guard import MAX_ROWS, GuardError, validate
 OK = "SELECT ticker, adj_close FROM public_marts.mart_etf_returns WHERE ticker = 'TLT'"
 
 
-# --- 통과해야 하는 것들 -------------------------------------------------
+# --- must pass ------------------------------------------------------------
 
 
 def test_valid_select_passes_and_gets_limit():
@@ -44,14 +44,14 @@ def test_cte_name_is_not_mistaken_for_table():
         )
         SELECT ticker, avg(daily_return) FROM recent GROUP BY ticker
     """
-    validate(sql)  # GuardError가 나지 않아야 함
+    validate(sql)  # must not raise GuardError
 
 
 def test_unqualified_allowed_table_passes():
     validate("SELECT ticker FROM mart_etf_returns")
 
 
-# --- 거부해야 하는 것들 -------------------------------------------------
+# --- must reject ----------------------------------------------------------
 
 
 @pytest.mark.parametrize(

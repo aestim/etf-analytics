@@ -1,12 +1,13 @@
 """
-Week 2 ①: 스키마 프롬프트 자동 생성기.
+Week 2 (1/3): schema-prompt generator.
 
-dbt 문서(marts/schema.yml)와 dim_etf 시드를 읽어 "우리 DB에는 이런
-테이블·컬럼이 있다" 텍스트를 만든다. 손으로 쓰면 테이블이 바뀔 때마다
-낡으므로 항상 파일에서 생성한다 — Week 1에서 schema.yml 설명을 공들여
-채운 이유가 바로 이것.
+Reads the dbt docs (marts/schema.yml) and the dim_etf seed to build the
+"here is what our database contains" text for the LLM. Hand-written schema
+prompts go stale the moment a table changes, so this is always generated
+from the files — which is exactly why the schema.yml descriptions were
+written carefully in Week 1.
 
-실행:  python qa/schema_prompt.py   (생성 결과를 눈으로 확인)
+Run:  python qa/schema_prompt.py   (eyeball the generated prompt)
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MARTS_SCHEMA_YML = ROOT / "dbt" / "models" / "marts" / "schema.yml"
 SEED_CSV = ROOT / "dbt" / "seeds" / "etf_info.csv"
 
-# LLM이 질의할 수 있는 테이블 — sql_guard 화이트리스트와 단일 원천(single source)
+# Tables the LLM may query — single source of truth shared with sql_guard
 SCHEMA_NAME = "public_marts"
 ALLOWED_TABLES = ("dim_etf", "mart_etf_returns", "mart_etf_risk_metrics")
 
@@ -33,7 +34,8 @@ def _model_section(model: dict) -> str:
 
 
 def _universe_section() -> str:
-    """dim_etf 시드 요약 — '미국 장기채' 같은 말을 sub_class 값으로 잇게 해준다."""
+    """Summary of the dim_etf seed — lets phrases like "long-term treasuries"
+    (or Korean equivalents) be mapped to sub_class values."""
     with open(SEED_CSV, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     lines = ["Current ETF universe (ticker / asset_class / sub_class / leverage):"]

@@ -1,12 +1,13 @@
 """
-Week 2 ③: 질문 → 표. 전체 파이프라인 조립.
+Week 2 (3/3): question → table. Assembles the whole pipeline.
 
-    python qa/ask.py "지난 1년 TLT 변동성 어땠어?"
+    python qa/ask.py "How volatile was TLT over the past year?"
 
-흐름:  문지기(Week 1) → SQL 생성(structured output) → 가드(sql_guard)
-       → etf_reader로 실행(타임아웃) → DataFrame 출력
+Flow:  intent gate (Week 1) → SQL generation (structured output)
+       → guard (sql_guard) → execute as etf_reader (timeout) → DataFrame
 
-대원칙: LLM은 양식(JSON)만 채운다. 실행은 검사를 거친 이 코드가 한다.
+Core principle: the LLM only fills in forms (JSON). Execution is done
+exclusively by this code, after validation.
 """
 
 from __future__ import annotations
@@ -23,16 +24,16 @@ from dotenv import load_dotenv
 from google import genai
 from pydantic import BaseModel
 
-from practice_structured import classify  # Week 1 문지기를 1단계 부품으로 재사용
+from practice_structured import classify  # reuse the Week 1 intent gate as stage 1
 from schema_prompt import SCHEMA_NAME, build_schema_prompt
 from sql_guard import MAX_ROWS, GuardError, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-# 무료 한도는 모델별로 따로 계산됨 → 일일 한도(PerDay) 감지 시 체인의
-# 다음 모델로 자동 전환한다 (flash 품질 우선, 소진되면 lite로 이어가기).
-# GEMINI_MODEL을 지정하면 그 모델을 체인 맨 앞에 둔다.
+# Free-tier quotas are tracked per model → on a daily (PerDay) quota error we
+# switch to the next model in the chain (flash first for quality, lite as the
+# fallback). Setting GEMINI_MODEL puts that model at the head of the chain.
 _DEFAULT_CHAIN = "gemini-flash-latest,gemini-flash-lite-latest"
 MODEL_CHAIN = [m.strip() for m in os.getenv("GEMINI_MODEL_CHAIN", _DEFAULT_CHAIN).split(",") if m.strip()]
 if _override := os.getenv("GEMINI_MODEL"):
@@ -46,7 +47,7 @@ def current_model() -> str:
 
 
 def _advance_model() -> bool:
-    """일일 한도 소진 시 다음 모델로 전환. 더 없으면 False."""
+    """Switch to the next model on daily-quota exhaustion. False if none left."""
     global _model_idx
     if _model_idx + 1 < len(MODEL_CHAIN):
         _model_idx += 1
@@ -54,16 +55,16 @@ def _advance_model() -> bool:
         return True
     return False
 
-STATEMENT_TIMEOUT_MS = 5000  # 3층 방어: 폭주 쿼리 강제 종료
+STATEMENT_TIMEOUT_MS = 5000  # defence layer 3: kill runaway queries
 
 
 class SqlAnswer(BaseModel):
     sql: str
-    explanation: str  # 이 SQL이 질문을 어떻게 푸는지 한두 문장 (사용자에게 표시)
+    explanation: str  # one or two sentences on how the SQL answers the question
 
 
-# few-shot: "질문 → 정답 SQL" 모범 예시. 스타일(스키마 경로, 날짜 처리,
-# 집계 요령)을 가르치는 게 목적이라 2~3개면 충분하다.
+# Few-shot "question → correct SQL" pairs. Their job is to teach style
+# (qualified schema paths, date handling, aggregation tricks) — 2-3 suffice.
 FEW_SHOTS = """
 Example 1
 Q: 지난 1년 TLT 변동성 어땠어?
@@ -115,27 +116,27 @@ Database schema:
 """
 
 
-RETRY_WAITS = (20, 45, 90)  # 429(분당 한도) 지수 백오프 — 기다리면 풀린다
+RETRY_WAITS = (20, 45, 90)  # exponential backoff for per-minute 429s — they clear if you wait
 
 
 class DailyQuotaError(RuntimeError):
-    """일일 한도 소진 — 기다려도 안 풀리므로 즉시 중단해야 한다."""
+    """Daily quota exhausted — waiting won't help, stop immediately."""
 
 
 def _with_backoff(fn, *args):
-    """Gemini 무료 한도(429) 대응 래퍼.
+    """Wrapper for Gemini free-tier (429) errors.
 
-    - 분당 한도: 서버가 제안한 retryDelay(있으면)만큼 기다렸다 재시도
-    - 일일 한도(PerDay): 재시도가 무의미 → DailyQuotaError로 즉시 전파
+    - Per-minute limit: wait (honouring the server-suggested retryDelay) and retry.
+    - Daily limit (PerDay): retrying is pointless → switch model or raise DailyQuotaError.
     """
     for attempt, wait in enumerate((*RETRY_WAITS, None)):
         try:
             return fn(*args)
-        except Exception as e:  # noqa: BLE001 — 메시지로 429 여부 판별
+        except Exception as e:  # noqa: BLE001 — 429s are identified by message
             msg = str(e)
             if "PerDay" in msg or "per day" in msg.lower():
                 if _advance_model():
-                    continue  # 다음 모델로 즉시 재시도 (한도는 모델별로 별도)
+                    continue  # retry immediately on the next model (quotas are per model)
                 raise DailyQuotaError("daily free-tier quota exhausted for all models") from e
             if wait is None or not ("429" in msg or "RESOURCE_EXHAUSTED" in msg):
                 raise
@@ -146,7 +147,7 @@ def _with_backoff(fn, *args):
 
 
 def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry: bool = True):
-    """structured output 호출 공통부 — parsed=None(빈/잘린 응답)도 처리."""
+    """Shared structured-output call — also handles parsed=None (empty/truncated)."""
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     response = client.models.generate_content(
         model=current_model(),
@@ -158,8 +159,9 @@ def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry
         },
     )
     if response.parsed is None:
-        # structured output도 보장이 아니다 — 스키마 불일치·잘린 응답이면
-        # parsed가 조용히 None이 된다. 한 번 재시도 후 명확한 에러로 승격.
+        # Structured output is not a guarantee — on schema mismatch or a
+        # truncated response, .parsed is silently None. Retry once, then
+        # promote to a clear error.
         if _retry:
             time.sleep(2)
             return _structured_call(system, contents, schema, _retry=False)
@@ -183,8 +185,8 @@ You pick a chart for the result table of a data question. Fill ChartSpec only.
 
 
 def generate_chart_spec(question: str, df: pd.DataFrame):
-    """Week 3: 결과 표를 보고 차트 양식을 채우게 한다 (LLM은 코드 금지, 양식만)."""
-    from chart_spec import ChartSpec  # 지연 임포트 — 러너는 차트 없이도 돌게
+    """Week 3: have the LLM fill a chart form for the result table (forms only, never code)."""
+    from chart_spec import ChartSpec  # lazy import — the test runner works without charts
 
     contents = (
         f"Question: {question}\n"
@@ -195,7 +197,7 @@ def generate_chart_spec(question: str, df: pd.DataFrame):
 
 
 def run_readonly(sql: str) -> pd.DataFrame:
-    """2층+3층 방어: 읽기 전용 계정 + statement_timeout."""
+    """Defence layers 2+3: read-only role + statement_timeout."""
     from sqlalchemy import create_engine
     from sqlalchemy.engine import URL
 
@@ -219,15 +221,15 @@ def run_readonly(sql: str) -> pd.DataFrame:
 
 @dataclass
 class AskResult:
-    """파이프라인 한 번의 구조화된 결과 — CLI와 자동 러너(run_week2.py)가 공유."""
+    """Structured result of one pipeline run — shared by the CLI, UI and test runner."""
 
     question: str
     status: str  # answered | refused_gate | refused_guard | error
-    reason: str = ""  # 거절/에러 사유
-    sql: str = ""  # LLM이 생성한 원본 SQL
-    safe_sql: str = ""  # 가드 통과 후 실행된 SQL
+    reason: str = ""  # refusal / error reason
+    sql: str = ""  # raw SQL as generated by the LLM
+    safe_sql: str = ""  # SQL actually executed, after passing the guard
     explanation: str = ""
-    model: str = ""  # 이 답을 만든 모델 (자동 스위칭 추적용)
+    model: str = ""  # which model produced this answer (fallback-chain tracking)
     df: pd.DataFrame | None = field(default=None, repr=False)
 
     @property
@@ -236,10 +238,10 @@ class AskResult:
 
 
 def answer(question: str) -> AskResult:
-    """질문 하나를 파이프라인 전체에 통과시키고 결과를 구조로 반환.
+    """Run one question through the whole pipeline; return a structured result.
 
-    예외를 밖으로 던지지 않는다 — 자동 러너가 20개를 끊김 없이
-    돌리려면 실패도 데이터여야 하기 때문.
+    Never raises (except DailyQuotaError) — the automated runner needs
+    failures to be data, not crashes.
     """
     try:
         gate = _with_backoff(lambda q: classify(q, model=current_model()), question)
@@ -260,13 +262,13 @@ def answer(question: str) -> AskResult:
             explanation=generated.explanation, df=df, model=current_model(),
         )
     except DailyQuotaError:
-        raise  # 기다려도 안 풀림 — 러너가 중단·재개 안내를 하도록 전파
-    except Exception as e:  # noqa: BLE001 — API/DB 장애도 기록 대상
+        raise  # waiting won't help — propagate so the runner can stop and explain how to resume
+    except Exception as e:  # noqa: BLE001 — API/DB failures are data too
         return AskResult(question, "error", reason=f"{type(e).__name__}: {e}")
 
 
 def ask(question: str) -> pd.DataFrame | None:
-    """CLI용 — answer()를 사람이 읽는 형태로 출력."""
+    """CLI wrapper — print answer() in a human-readable form."""
     r = answer(question)
     if r.status == "refused_gate":
         print(f"⛔ I can't answer that — {r.reason}")
@@ -287,7 +289,7 @@ def ask(question: str) -> pd.DataFrame | None:
 
 
 def ask_with_chart(question: str) -> None:
-    """질문 → 표 → 차트 저장까지 한 번에 (Week 3 산출물)."""
+    """Question → table → saved chart, in one go (Week 3 deliverable)."""
     df = ask(question)
     if df is None or df.empty:
         return

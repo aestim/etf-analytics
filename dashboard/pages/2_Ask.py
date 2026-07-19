@@ -1,13 +1,14 @@
 """
-Ask — 자연어로 마트에 질문하는 채팅 페이지 (Week 4).
+Ask — chat page for natural-language questions over the marts (Week 4).
 
-파이프라인은 qa/의 pytest 검증된 부품 그대로: 문지기 → SQL 생성 →
-sqlglot 가드 → etf_reader 실행 → (선택) ChartSpec → 렌더러.
-이 페이지는 그 부품들을 채팅 UI로 감싸기만 한다.
+The pipeline is exactly the pytest-covered parts from qa/: intent gate →
+SQL generation → sqlglot guard → execution as etf_reader → (optional)
+ChartSpec → renderer. This page only wraps those parts in a chat UI.
 
-무료 한도 대응: 같은 질문은 캐시 재사용(에러는 캐시 안 함),
-429 백오프는 qa/ask.py의 _with_backoff가 담당.
-모든 질문·SQL·오류는 qa/logs/ask_ui.jsonl에 기록 (Week 5 eval 재료).
+Free-tier handling: identical questions are served from cache (errors are
+never cached); 429 backoff lives in qa/ask.py's _with_backoff.
+Every question, generated SQL and error is logged to qa/logs/ask_ui.jsonl
+(input for the Week 5 eval).
 """
 
 from __future__ import annotations
@@ -53,10 +54,10 @@ LOG_PATH = _ROOT / "qa" / "logs" / "ask_ui.jsonl"
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_answer(question: str):
-    """같은 질문은 1시간 동안 API 재호출 없이 재사용. 에러는 캐시에 남기지 않는다."""
+    """Serve identical questions from cache for an hour; never cache errors."""
     r = answer(question)
     if r.status == "error":
-        raise RuntimeError(r.reason)  # 예외는 st.cache_data가 저장하지 않음
+        raise RuntimeError(r.reason)  # st.cache_data does not store exceptions
     return r
 
 
@@ -132,7 +133,7 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                         fig = render(spec, r.df)
                         if fig is None and (why := TABLE_FALLBACK_REASONS.get("last")):
                             chart_note = f"Showing a table instead of a chart ({why})"
-                    except Exception as e:  # noqa: BLE001 — 차트 실패해도 표는 산다
+                    except Exception as e:  # noqa: BLE001 — chart failures must not kill the table
                         chart_note = f"Chart generation failed, showing table: {e}"
                 entry = {"role": "assistant", "kind": "data", "df": r.df,
                          "explanation": r.explanation, "safe_sql": r.safe_sql,

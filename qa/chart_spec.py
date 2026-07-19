@@ -1,11 +1,12 @@
 """
-Week 3 ①: ChartSpec — LLM이 채우는 차트 "양식"과 그 검증.
+Week 3 (1/2): ChartSpec — the chart "form" the LLM fills in, and its validation.
 
-대원칙 그대로: LLM은 차트 코드를 짜지 않는다. 이 양식(JSON)만 채우고,
-그리는 건 render.py의 화이트리스트 함수들이 한다.
+Same core principle as the SQL layer: the LLM never writes chart code.
+It only fills this form (JSON); drawing is done by the whitelisted
+functions in render.py.
 
-검증 철학: LLM이 없는 컬럼을 지정해도 에러로 죽지 않는다 —
-**표(table)로 폴백**한다. "실패해도 안 죽는" 설계.
+Validation philosophy: if the LLM names a column that doesn't exist, we
+don't crash — we **fall back to a table**. Fail-safe by design.
 
 Covered by tests/test_chart_spec.py.
 """
@@ -22,27 +23,27 @@ ChartType = Literal["line", "bar", "scatter", "table"]
 
 class ChartSpec(BaseModel):
     chart_type: ChartType
-    x: str | None = None  # 컬럼명 (table이면 불필요)
-    y: str | None = None  # 컬럼명 — 수치형이어야 함
-    group_by: str | None = None  # 색으로 구분할 컬럼 (예: ticker)
+    x: str | None = None  # column name (not needed for table)
+    y: str | None = None  # column name — must be numeric
+    group_by: str | None = None  # column to color by (e.g. ticker)
     title: str = ""
 
 
-TABLE_FALLBACK_REASONS: dict[str, str] = {}  # 관찰용: 마지막 폴백 사유
+TABLE_FALLBACK_REASONS: dict[str, str] = {}  # observability: last fallback reason
 
 
 def validate_spec(spec: ChartSpec, df: pd.DataFrame) -> ChartSpec:
-    """스펙이 df에 대해 그릴 수 있는지 검사 — 아니면 표로 폴백.
+    """Check the spec is drawable against df — otherwise fall back to a table.
 
-    폴백 조건: x/y 미지정, 없는 컬럼, y가 수치형이 아님.
-    group_by만 잘못된 경우엔 차트는 살리고 group_by만 버린다.
+    Fallback triggers: x/y missing, unknown column, non-numeric y.
+    If only group_by is wrong, keep the chart and just drop group_by.
     """
 
     def fallback(reason: str) -> ChartSpec:
         TABLE_FALLBACK_REASONS["last"] = reason
         return ChartSpec(chart_type="table", title=spec.title)
 
-    TABLE_FALLBACK_REASONS.pop("last", None)  # 이전 호출의 사유 제거
+    TABLE_FALLBACK_REASONS.pop("last", None)  # clear the previous call's reason
     if spec.chart_type == "table":
         return spec
     cols = set(df.columns)

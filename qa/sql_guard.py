@@ -1,14 +1,15 @@
 """
-Week 2 ②: SQL 안전장치 1층 — 실행 없이 X-ray 검사 (sqlglot).
+Week 2 (2/3): SQL safety layer 1 — an X-ray check without execution (sqlglot).
 
-원칙: LLM 출력은 신뢰하지 않는다. 3중 방어의 1층이 이 파일이다.
-  1층 (여기)     sqlglot 파싱: 단일 SELECT · 화이트리스트 테이블 · LIMIT 강제
-  2층 (ask.py)   etf_reader(읽기 전용 계정)로만 실행 — 1층이 뚫려도 쓰기 불가
-  3층 (ask.py)   statement_timeout — 폭주 쿼리 강제 종료
+Principle: never trust LLM output. This file is layer 1 of a 3-layer defence:
+  Layer 1 (here)     sqlglot parse: single SELECT · whitelisted tables · forced LIMIT
+  Layer 2 (ask.py)   execute only as etf_reader (read-only role) — even if layer 1
+                     were bypassed, writes are impossible
+  Layer 3 (ask.py)   statement_timeout — kills runaway queries
 
-문자열 검사(예: "INSERT"라는 단어 찾기)가 아니라 **파스 트리** 검사인
-이유: 문자열은 우회가 쉽다("/**/IN/**/SERT", 서브쿼리 은닉 등).
-sqlglot은 SQL을 실행하지 않고 구조를 파악한다.
+Why a parse-tree check instead of string matching (e.g. searching for
+"INSERT")? Strings are easy to evade ("/**/IN/**/SERT", subquery smuggling).
+sqlglot understands the structure of the SQL without executing it.
 
 Covered by tests/test_sql_guard.py.
 """
@@ -20,9 +21,9 @@ from sqlglot import exp
 
 from schema_prompt import ALLOWED_TABLES, SCHEMA_NAME
 
-MAX_ROWS = 200  # 사람이 표로 읽을 양 + 실수로 전체 테이블 덤프 방지
+MAX_ROWS = 200  # human-readable table size + prevents accidental full-table dumps
 
-# 버전에 따라 없는 노드도 있어 존재하는 것만 수집
+# Collect only the node types that exist in the installed sqlglot version
 _FORBIDDEN_NAMES = (
     "Insert", "Update", "Delete", "Drop", "Create", "Alter", "AlterTable",
     "Merge", "TruncateTable", "Grant", "Command",
@@ -31,19 +32,19 @@ FORBIDDEN_NODES = tuple(getattr(exp, n) for n in _FORBIDDEN_NAMES if hasattr(exp
 
 
 class GuardError(ValueError):
-    """검사 탈락 사유 — 사용자에게 그대로 보여줘도 되는 문장으로 쓴다."""
+    """Rejection reason — phrased so it can be shown to the user as-is."""
 
 
 def validate(sql: str) -> str:
-    """검사를 통과하면 LIMIT이 보장된 SQL을 돌려주고, 아니면 GuardError.
+    """Return the SQL with a guaranteed LIMIT if it passes; raise GuardError otherwise.
 
-    검사 순서 (하나라도 걸리면 즉시 거부):
-      1. 파싱 가능한가
-      2. 문장이 정확히 1개인가
-      3. 최상위가 SELECT인가 (SELECT INTO 금지 포함)
-      4. 트리 어디에도 쓰기/DDL 노드가 없는가 (서브쿼리 포함)
-      5. 참조 테이블이 전부 화이트리스트인가 (CTE 이름은 예외)
-      6. LIMIT이 없거나 크면 MAX_ROWS로 강제
+    Checks, in order (any failure rejects immediately):
+      1. parses at all
+      2. exactly one statement
+      3. top level is a SELECT (SELECT INTO rejected too)
+      4. no write/DDL nodes anywhere in the tree (subqueries included)
+      5. every referenced table is whitelisted (CTE names exempt)
+      6. LIMIT forced to MAX_ROWS when missing or larger
     """
     try:
         statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
@@ -67,7 +68,7 @@ def validate(sql: str) -> str:
     for table in tree.find_all(exp.Table):
         name, schema = table.name, table.db
         if name in cte_names and not schema:
-            continue  # WITH 절에서 정의한 이름은 실제 테이블이 아님
+            continue  # names defined in a WITH clause are not real tables
         if schema not in ("", SCHEMA_NAME) or name not in ALLOWED_TABLES:
             shown = f"{schema}.{name}" if schema else name
             raise GuardError(

@@ -1,4 +1,4 @@
-"""qa/schema_prompt.py — dbt 문서에서 프롬프트가 온전히 생성되는지."""
+"""qa/schema_prompt.py — the prompt is fully generated from the dbt docs."""
 
 from schema_prompt import ALLOWED_TABLES, build_schema_prompt
 
@@ -19,4 +19,4 @@ def test_prompt_contains_universe_with_new_tickers():
     prompt = build_schema_prompt()
     for ticker in ("SCHD", "VWO", "IWM", "TLT"):
         assert ticker in prompt
-    assert "treasury_long" in prompt  # '미국 장기채' → sub_class 매핑 재료
+    assert "treasury_long" in prompt  # lets "long-term treasuries" map to sub_class

@@ -1,9 +1,10 @@
 """
-Week 3 ②: 렌더러 4종 — 검증된 ChartSpec만 받아 실제로 그린다.
+Week 3 (2/2): the four renderers — draw only validated ChartSpecs.
 
-여기 있는 함수만 차트를 그릴 수 있다(화이트리스트). LLM이 만든 코드가
-아니라 LLM이 채운 양식을 받는 것뿐이므로, 렌더러는 평범한 내 코드다.
-대시보드의 line_chart()를 일반화한 것.
+Only the functions here can produce charts (a whitelist). They receive a
+form the LLM filled in, never code the LLM wrote, so the renderers are
+plain, boring, reviewable code. A generalisation of the dashboard's
+line_chart().
 
 Covered by tests/test_chart_spec.py.
 """
@@ -22,7 +23,7 @@ CHARTS_DIR = Path(__file__).resolve().parent / "charts"
 
 
 def render(spec: ChartSpec, df: pd.DataFrame):
-    """spec → plotly Figure. table 스펙이면 None (호출자가 표로 출력)."""
+    """spec → plotly Figure. Returns None for a table spec (caller prints the df)."""
     if spec.chart_type == "table":
         return None
     kwargs: dict = {"x": spec.x, "y": spec.y}
@@ -35,7 +36,7 @@ def render(spec: ChartSpec, df: pd.DataFrame):
 
 
 def save_html(fig, name_hint: str = "chart") -> Path:
-    """Figure를 qa/charts/*.html로 저장하고 경로 반환 (브라우저로 열면 됨)."""
+    """Save the figure to qa/charts/*.html and return the path."""
     CHARTS_DIR.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = CHARTS_DIR / f"{name_hint}_{stamp}.html"

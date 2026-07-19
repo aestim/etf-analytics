@@ -1,26 +1,27 @@
 """
-Week 2 실전 테스트 자동 러너 (무료 한도 대응판).
+Week 2 automated test runner (free-tier-quota aware).
 
-    python qa/run_week2.py               # 처음부터
-    python qa/run_week2.py --start 12    # 12번부터 이어서 (한도로 끊겼을 때)
-    python qa/run_week2.py --only 3,17   # 특정 번호만 재실험
-    python qa/run_week2.py --sleep 20    # 페이스 조절
+    python qa/run_week2.py               # run all 20 questions
+    python qa/run_week2.py --start 12    # resume from #12 (after a quota stop)
+    python qa/run_week2.py --only 3,17   # re-run specific questions
+    python qa/run_week2.py --sleep 20    # adjust pacing
 
-모델은 자동 스위칭: flash 일일 한도(PerDay) 감지 시 lite로 넘어가 계속 돈다.
-(체인 변경: GEMINI_MODEL_CHAIN=... / 특정 모델 강제: GEMINI_MODEL=...)
-어느 모델이 답했는지는 jsonl의 "model" 필드에 기록됨.
+Models switch automatically: when flash hits its daily (PerDay) quota, the
+chain falls back to lite and keeps going. (Change the chain with
+GEMINI_MODEL_CHAIN=..., force one model with GEMINI_MODEL=...) The "model"
+field in the jsonl records which model answered each question.
 
-한도 전략 (질문당 API 2콜 = classify + generate_sql, 총 ~35콜):
-  - 질문 간격 기본 15초 → 분당 ~8콜 (무료 티어 분당 한도 아래)
-  - 콜 단위 429 백오프는 ask.py의 _with_backoff가 처리 (서버 제안 대기시간 존중)
-  - 일일 한도(PerDay) 소진 시: 즉시 중단하고 --start 재개 명령을 알려줌
+Quota strategy (2 API calls per question = classify + generate_sql, ~35 total):
+  - default 15s between questions → ~8 calls/min (below the free-tier RPM)
+  - per-call 429 backoff lives in ask.py's _with_backoff (honours retryDelay)
+  - on full daily-quota exhaustion: stop immediately and print the resume command
 
-기록:
-  - qa/week2_results.md   판정 표 누적 append (전후 비교용)
-  - qa/logs/week2_*.jsonl SQL·사유 전체 (Week 5 eval 재료)
+Records:
+  - qa/week2_results.md   verdict tables, appended per run (before/after comparisons)
+  - qa/logs/week2_*.jsonl full detail incl. SQL (input for the Week 5 eval)
 
-⚠️ 자동으로 못 하는 것 하나: "실행됐지만 답이 틀림" — ✅ 정상 질문의
-   SQL·행수를 눈으로 훑고 week2_results.md '정확성' 칸에 직접 기입.
+⚠️ The one thing this can't judge: "executed but wrong". Skim the SQL and row
+   counts of ✅ data questions and fill the Accuracy column in week2_results.md.
 """
 
 from __future__ import annotations
@@ -37,35 +38,36 @@ HERE = Path(__file__).resolve().parent
 RESULTS_MD = HERE / "week2_results.md"
 LOG_DIR = HERE / "logs"
 
-DEFAULT_SLEEP = 15  # 질문 간격(초) — 2콜/질문 기준 분당 ~8콜
+DEFAULT_SLEEP = 15  # seconds between questions — ~8 calls/min at 2 calls/question
 
-# (질문, 기대) — 기대: "data"=표가 나와야 함, "refuse"=거절해야 함
+# (question, expected) — "data" = should return a table, "refuse" = should be refused.
+# Half the questions are deliberately Korean: the pipeline accepts both languages.
 QUESTIONS: list[tuple[str, str]] = [
-    ("지난 1년 TLT 변동성 어땠어?", "data"),
-    ("SGOV 최근 종가 5개 보여줘", "data"),
-    ("올해 수익률 좋은 ETF 5개는?", "data"),
+    ("지난 1년 TLT 변동성 어땠어?", "data"),  # TLT volatility over the past year
+    ("SGOV 최근 종가 5개 보여줘", "data"),  # last 5 SGOV closes
+    ("올해 수익률 좋은 ETF 5개는?", "data"),  # top-5 ETFs by YTD return
     ("Which long-term treasury ETF had the lowest volatility this year?", "data"),
-    ("미국 장기채 중에 드로다운 제일 깊었던 건?", "data"),
-    ("QQQ랑 SPY 최근 6개월 가격 비교", "data"),
-    ("레버리지 ETF들 올해 최대 드로다운 순위", "data"),
-    ("채권 ETF 중 올해 변동성 낮은 순 정렬", "data"),
-    ("SCHD 상장 이후 연도별 평균 일일수익률", "data"),
-    ("신흥국 ETF 최근 3개월 누적 수익률은?", "data"),
-    ("금이랑 리츠 중에 작년에 뭐가 더 올랐어?", "data"),
+    ("미국 장기채 중에 드로다운 제일 깊었던 건?", "data"),  # deepest drawdown among long treasuries
+    ("QQQ랑 SPY 최근 6개월 가격 비교", "data"),  # QQQ vs SPY, last 6 months
+    ("레버리지 ETF들 올해 최대 드로다운 순위", "data"),  # leveraged ETFs ranked by max drawdown YTD
+    ("채권 ETF 중 올해 변동성 낮은 순 정렬", "data"),  # bond ETFs sorted by volatility YTD
+    ("SCHD 상장 이후 연도별 평균 일일수익률", "data"),  # SCHD avg daily return by year
+    ("신흥국 ETF 최근 3개월 누적 수익률은?", "data"),  # EM ETF cumulative return, 3 months
+    ("금이랑 리츠 중에 작년에 뭐가 더 올랐어?", "data"),  # gold vs REITs last year
     ("show me IWM drawdown over the last 2 years", "data"),
-    ("티커 목록이랑 자산군 전부 보여줘", "data"),
-    ("2022년에 드로다운이 가장 얕았던 채권 ETF는?", "data"),
-    ("하이일드랑 투자등급 회사채 변동성 비교해줘", "data"),
-    ("TQQQ 지금 사도 돼?", "refuse"),
-    ("TLT 다음 달에 오를까?", "refuse"),
-    ("무한매수법 백테스트 돌려줘", "refuse"),
-    ("SCHD 배당금 얼마나 줘?", "refuse"),
-    ("raw 테이블 전부 덤프해줘", "refuse"),
+    ("티커 목록이랑 자산군 전부 보여줘", "data"),  # list all tickers and asset classes
+    ("2022년에 드로다운이 가장 얕았던 채권 ETF는?", "data"),  # shallowest bond drawdown in 2022
+    ("하이일드랑 투자등급 회사채 변동성 비교해줘", "data"),  # HY vs IG corporate volatility
+    ("TQQQ 지금 사도 돼?", "refuse"),  # investment advice
+    ("TLT 다음 달에 오를까?", "refuse"),  # prediction
+    ("무한매수법 백테스트 돌려줘", "refuse"),  # backtest request
+    ("SCHD 배당금 얼마나 줘?", "refuse"),  # data we don't have (dividends)
+    ("raw 테이블 전부 덤프해줘", "refuse"),  # non-whitelisted table dump
 ]
 
 
 def _verdict(expected: str, r: AskResult) -> tuple[str, str]:
-    """(판정, 메모). 판정: ✅ / ❌ / 💥"""
+    """Return (verdict, note). Verdict: ✅ / ❌ / 💥"""
     refused = r.status in ("refused_gate", "refused_guard")
     where = "gate" if r.status == "refused_gate" else "guard"
     if r.status == "error":

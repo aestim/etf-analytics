@@ -1,10 +1,11 @@
 """
-Week 1 실습: Gemini structured output — 질문 의도 분류기.
+Week 1 exercise: Gemini structured output — question intent classifier.
 
-실행:  python qa/practice_structured.py
-합격:  질문 3개 모두 pydantic 파싱 성공 + 2·3번이 out_of_scope로 분류.
+Run:   python qa/practice_structured.py
+Pass:  all questions parse into the pydantic schema, and the advice/backtest
+       ones are classified out_of_scope.
 
-TODO를 위에서부터 채우면 됨. 이 분류기는 Week 2 text-to-SQL의 1단계가 된다.
+This classifier became stage 1 of the Week 2 text-to-SQL pipeline (ask.py).
 """
 
 import os
@@ -17,15 +18,15 @@ from pydantic import BaseModel
 load_dotenv()
 
 
-# --- TODO 1: 응답 스키마 정의 -------------------------------------------
+# --- 1. Response schema ---------------------------------------------------
 class QuestionIntent(BaseModel):
     intent: Literal["data_query", "out_of_scope"]
-    tickers: list[str]        # 질문에 언급된 티커 (없으면 빈 리스트)
+    tickers: list[str]        # tickers mentioned in the question (empty if none)
     metric: Literal["price", "return", "volatility", "drawdown", "unknown"]
-    reason: str               # 분류 근거 한 문장
+    reason: str               # one-sentence justification
 
 
-# --- TODO 2: 허용 범위를 시스템 프롬프트로 ------------------------------
+# --- 2. Allowed scope as the system prompt --------------------------------
 SYSTEM_PROMPT = """
 You are a gatekeeper for an ETF analytics Q&A system.
 Classify the user's question. Questions may be in Korean or English.
@@ -43,17 +44,15 @@ regardless of the question's language.
 """
 
 QUESTIONS = [
-    "지난 1년 TLT 변동성 어땠어?",   # 기대: data_query
-    "TQQQ 지금 사도 돼?",            # 기대: out_of_scope
-    "무한매수법 백테스트 해줘",       # 기대: out_of_scope
-    "Which ETF had the lowest volatility this year", # 기대: data_query
+    "지난 1년 TLT 변동성 어땠어?",   # KR "TLT volatility, past year" — expect: data_query
+    "TQQQ 지금 사도 돼?",            # KR "should I buy TQQQ?" — expect: out_of_scope
+    "무한매수법 백테스트 해줘",       # KR "backtest infinite buying" — expect: out_of_scope
+    "Which ETF had the lowest volatility this year",  # expect: data_query
 ]
 
 
 def classify(question: str, model: str | None = None):
-    # TODO 3: client = genai.Client(api_key=...)
     client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
-    # TODO 4:
     response = client.models.generate_content(
         model=model or os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
         contents=question,
