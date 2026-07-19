@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS raw.etf_prices (
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'etf_reader') THEN
-        CREATE ROLE etf_reader LOGIN PASSWORD 'etf_reader';
+        CREATE ROLE etf_reader LOGIN PASSWORD 'real_password';
     END IF;
 END $$;
 
