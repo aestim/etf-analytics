@@ -33,6 +33,8 @@ Classify the user's question. Questions may be in Korean or English.
 
 data_query = can be answered from our warehouse: daily prices, returns,
 volatility, drawdown per ETF — lookups, aggregations, rankings, comparisons.
+This includes metadata questions about the ETF universe itself: listing
+tickers, names, asset classes / sub classes, or leverage (the dim_etf table).
 
 out_of_scope = predictions ("will it go up?"), investment advice ("should I buy?"),
 path-dependent simulations (backtests, DCA), or data we don't have
