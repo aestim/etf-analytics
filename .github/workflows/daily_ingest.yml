@@ -17,6 +17,16 @@ jobs:
   ingest:
     runs-on: ubuntu-latest
 
+    # Optional cloud warehouse (e.g. Neon/Supabase free Postgres).
+    # Set the POSTGRES_* repo secrets to enable; leave unset for parquet-only.
+    env:
+      POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ secrets.POSTGRES_PORT || '5432' }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'etf_analytics' }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'etf' }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_SSLMODE: ${{ secrets.POSTGRES_SSLMODE || 'require' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,14 +41,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r ingest/requirements.txt
 
-      - name: Fetch prices
+      - name: Fetch prices (writes parquet; upserts warehouse when secrets are set)
         run: python ingest/fetch_prices.py
         env:
           RAW_DATA_DIR: data/raw
           ETF_TICKERS: SGOV,VGIT,TLT,BND,LQD,HYG,TIP,SPY,QQQ,QLD,TQQQ,VEA,SCHD,VWO,IWM,VNQ,GLD
           FETCH_PERIOD: 10y
-          # CI has no Postgres; parquet only
-          POSTGRES_HOST: ''
+
+      - name: dbt build against cloud warehouse
+        if: env.POSTGRES_HOST != ''
+        run: |
+          pip install "dbt-core>=1.7,<2" "dbt-postgres>=1.7,<2"
+          cd dbt
+          cp profiles.yml.example profiles.yml  # profiles.yml is gitignored; env-driven anyway
+          dbt deps
+          dbt seed --profiles-dir .
+          dbt run --profiles-dir .
+          dbt test --profiles-dir .
 
       - name: Commit and push raw data
         run: |

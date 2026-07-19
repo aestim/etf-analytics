@@ -82,6 +82,7 @@ def load_postgres(df: pd.DataFrame) -> None:
         dbname=os.getenv("POSTGRES_DB", "etf_analytics"),
         user=os.getenv("POSTGRES_USER", "etf"),
         password=os.getenv("POSTGRES_PASSWORD", "etf"),
+        sslmode=os.getenv("POSTGRES_SSLMODE", "prefer"),  # managed Postgres requires SSL
     )
     rows = [
         (

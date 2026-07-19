@@ -122,6 +122,16 @@ Open http://localhost:8501 — dashboard on the home page, **Strategy Lab** in t
 
 Workflow: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices on weekdays after US close and commits parquet to `data/raw/`. If pushes fail with a 403, set **Settings → Actions → Workflow permissions → Read and write**.
 
+### Optional: cloud warehouse (full mode online)
+
+By default the hosted demo runs in parquet fallback ("demo mode"). To run the
+full Postgres + dbt warehouse online at zero cost:
+
+1. Create a free managed Postgres (e.g. [Neon](https://neon.tech) or [Supabase](https://supabase.com)) and apply `scripts/init_db.sql` once (creates `raw.etf_prices` and the read-only `etf_reader` role)
+2. Add repo **Actions secrets**: `POSTGRES_HOST`, `POSTGRES_PASSWORD` (and `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` if they differ from the defaults) — the daily workflow then upserts prices **and runs `dbt seed/run/test`** against the cloud warehouse
+3. Add the same values to **Streamlit Cloud secrets** — the app detects the warehouse and switches out of demo mode automatically (no code change; that's the fallback design paying off)
+4. Optionally add `GEMINI_API_KEY` to Streamlit secrets to enable the **Ask** page online, and set `ASK_PASSWORD` to gate it (a public LLM endpoint on a free quota is an invitation)
+
 ## Data & limitations
 
 - Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is the primary price for all return math

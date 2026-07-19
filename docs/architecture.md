@@ -79,6 +79,7 @@ DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
 | Environment | Raw storage | Warehouse | Orchestration |
 |-------------|-------------|-----------|---------------|
 | Local (this repo) | `data/raw/` | Docker Postgres | Docker Airflow |
+| Cloud demo (live) | `data/raw/` committed by CI | Managed Postgres (Neon/Supabase, optional) | GitHub Actions (`daily_ingest.yml`) |
 | Production-style | S3 `s3://bucket/raw/etf/` | RDS Postgres | Managed Airflow / MWAA |
 
 ## Security & config

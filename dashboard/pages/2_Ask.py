@@ -45,6 +45,20 @@ if not warehouse_available() or not os.getenv("GEMINI_API_KEY"):
     )
     st.stop()
 
+# Optional gate for public deployments: set ASK_PASSWORD (Streamlit secret or
+# env var) to require a password — protects the free LLM quota from strangers.
+def _ask_password() -> str:
+    try:
+        return str(st.secrets.get("ASK_PASSWORD", "")) or os.getenv("ASK_PASSWORD", "")
+    except Exception:  # no secrets.toml in local runs
+        return os.getenv("ASK_PASSWORD", "")
+
+
+if _pw := _ask_password():
+    if st.text_input("Access password", type="password") != _pw:
+        st.info("This public demo requires a password (it shares a free LLM quota).")
+        st.stop()
+
 from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec  # noqa: E402
 from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
 from render import render  # noqa: E402

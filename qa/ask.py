@@ -213,6 +213,7 @@ def run_readonly(sql: str) -> pd.DataFrame:
         url,
         connect_args={
             "connect_timeout": 3,
+            "sslmode": os.getenv("POSTGRES_SSLMODE", "prefer"),
             "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
         },
     )

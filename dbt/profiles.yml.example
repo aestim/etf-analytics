@@ -8,5 +8,6 @@ etf_analytics:
       user: "{{ env_var('POSTGRES_USER', 'etf') }}"
       password: "{{ env_var('POSTGRES_PASSWORD', 'etf') }}"
       dbname: "{{ env_var('POSTGRES_DB', 'etf_analytics') }}"
+      sslmode: "{{ env_var('POSTGRES_SSLMODE', 'prefer') }}"
       schema: public
       threads: 4

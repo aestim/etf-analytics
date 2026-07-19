@@ -77,7 +77,14 @@ def get_engine():
         port=int(os.getenv("POSTGRES_PORT", "5433")),
         database=os.getenv("POSTGRES_DB", "etf_analytics"),
     )
-    return create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 3})
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        connect_args={
+            "connect_timeout": 3,
+            "sslmode": os.getenv("POSTGRES_SSLMODE", "prefer"),  # managed Postgres requires SSL
+        },
+    )
 
 
 @st.cache_resource
