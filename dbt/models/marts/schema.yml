@@ -22,7 +22,16 @@ models:
     columns:
       - name: ticker
         description: ETF ticker symbol, uppercase (e.g. SPY, TLT, GLD)
-        tests: [not_null]
+        tests:
+          - not_null
+          # Every ticker in the marts must exist in dim_etf — catches a new
+          # ETF_TICKERS entry whose seeds/etf_info.csv row was forgotten.
+          - relationships:
+              arguments:
+                to: ref('dim_etf')
+                field: ticker
+              config:
+                severity: warn
       - name: price_date
         description: Trading session date (US market calendar)
         tests: [not_null]
