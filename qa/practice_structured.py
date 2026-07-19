@@ -48,12 +48,12 @@ QUESTIONS = [
 ]
 
 
-def classify(question: str):
+def classify(question: str, model: str | None = None):
     # TODO 3: client = genai.Client(api_key=...)
     client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
-    # TODO 4: 
+    # TODO 4:
     response = client.models.generate_content(
-        model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
+        model=model or os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
         contents=question,
         config={
             "system_instruction": SYSTEM_PROMPT,

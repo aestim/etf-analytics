@@ -58,13 +58,13 @@ def cached_answer(question: str):
     return r
 
 
-def log_event(question: str, status: str, sql: str = "", n_rows=None, error: str = "") -> None:
+def log_event(question: str, status: str, sql: str = "", n_rows=None, error: str = "", model: str = "") -> None:
     LOG_PATH.parent.mkdir(exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "question": question, "status": status,
-            "sql": sql, "n_rows": n_rows, "error": error,
+            "sql": sql, "n_rows": n_rows, "error": error, "model": model,
         }, ensure_ascii=False) + "\n")
 
 
@@ -118,7 +118,7 @@ if question := st.chat_input("예: 지난 1년 TLT 변동성 어땠어?"):
         else:
             if r.status in ("refused_gate", "refused_guard"):
                 entry = {"role": "assistant", "kind": "refusal", "text": r.reason}
-                log_event(question, r.status, sql=r.sql)
+                log_event(question, r.status, sql=r.sql, model=r.model)
             else:
                 fig, chart_note = None, ""
                 if auto_chart and r.df is not None and not r.df.empty:
@@ -132,6 +132,6 @@ if question := st.chat_input("예: 지난 1년 TLT 변동성 어땠어?"):
                 entry = {"role": "assistant", "kind": "data", "df": r.df,
                          "explanation": r.explanation, "safe_sql": r.safe_sql,
                          "fig": fig, "chart_note": chart_note}
-                log_event(question, "answered", sql=r.safe_sql, n_rows=r.n_rows)
+                log_event(question, "answered", sql=r.safe_sql, n_rows=r.n_rows, model=r.model)
         show_assistant(entry)
     st.session_state.chat.append(entry)

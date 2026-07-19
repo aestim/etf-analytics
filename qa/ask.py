@@ -30,9 +30,29 @@ from sql_guard import MAX_ROWS, GuardError, validate
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-# 무료 한도는 모델별로 따로 계산됨 — flash 한도가 소진되면
-# GEMINI_MODEL=gemini-flash-lite-latest 로 바꿔 계속 진행 가능
-MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+# 무료 한도는 모델별로 따로 계산됨 → 일일 한도(PerDay) 감지 시 체인의
+# 다음 모델로 자동 전환한다 (flash 품질 우선, 소진되면 lite로 이어가기).
+# GEMINI_MODEL을 지정하면 그 모델을 체인 맨 앞에 둔다.
+_DEFAULT_CHAIN = "gemini-flash-latest,gemini-flash-lite-latest"
+MODEL_CHAIN = [m.strip() for m in os.getenv("GEMINI_MODEL_CHAIN", _DEFAULT_CHAIN).split(",") if m.strip()]
+if _override := os.getenv("GEMINI_MODEL"):
+    MODEL_CHAIN = [_override] + [m for m in MODEL_CHAIN if m != _override]
+
+_model_idx = 0
+
+
+def current_model() -> str:
+    return MODEL_CHAIN[_model_idx]
+
+
+def _advance_model() -> bool:
+    """일일 한도 소진 시 다음 모델로 전환. 더 없으면 False."""
+    global _model_idx
+    if _model_idx + 1 < len(MODEL_CHAIN):
+        _model_idx += 1
+        print(f"   (일일 한도 → 모델 전환: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})")
+        return True
+    return False
 
 STATEMENT_TIMEOUT_MS = 5000  # 3층 방어: 폭주 쿼리 강제 종료
 
@@ -112,7 +132,9 @@ def _with_backoff(fn, *args):
         except Exception as e:  # noqa: BLE001 — 메시지로 429 여부 판별
             msg = str(e)
             if "PerDay" in msg or "per day" in msg.lower():
-                raise DailyQuotaError("Gemini 일일 무료 한도 소진") from e
+                if _advance_model():
+                    continue  # 다음 모델로 즉시 재시도 (한도는 모델별로 별도)
+                raise DailyQuotaError("모든 모델의 일일 무료 한도 소진") from e
             if wait is None or not ("429" in msg or "RESOURCE_EXHAUSTED" in msg):
                 raise
             m = re.search(r"retry(?:Delay)?\D*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
@@ -125,7 +147,7 @@ def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry
     """structured output 호출 공통부 — parsed=None(빈/잘린 응답)도 처리."""
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     response = client.models.generate_content(
-        model=MODEL,
+        model=current_model(),
         contents=contents,
         config={
             "system_instruction": system,
@@ -203,6 +225,7 @@ class AskResult:
     sql: str = ""  # LLM이 생성한 원본 SQL
     safe_sql: str = ""  # 가드 통과 후 실행된 SQL
     explanation: str = ""
+    model: str = ""  # 이 답을 만든 모델 (자동 스위칭 추적용)
     df: pd.DataFrame | None = field(default=None, repr=False)
 
     @property
@@ -217,21 +240,22 @@ def answer(question: str) -> AskResult:
     돌리려면 실패도 데이터여야 하기 때문.
     """
     try:
-        gate = _with_backoff(classify, question)
+        gate = _with_backoff(lambda q: classify(q, model=current_model()), question)
         if gate.intent == "out_of_scope":
-            return AskResult(question, "refused_gate", reason=gate.reason)
+            return AskResult(question, "refused_gate", reason=gate.reason, model=current_model())
 
         generated = _with_backoff(generate_sql, question)
         try:
             safe_sql = validate(generated.sql)
         except GuardError as e:
-            return AskResult(question, "refused_guard", reason=str(e), sql=generated.sql)
+            return AskResult(question, "refused_guard", reason=str(e), sql=generated.sql,
+                             model=current_model())
 
         df = run_readonly(safe_sql)
         return AskResult(
             question, "answered",
             sql=generated.sql, safe_sql=safe_sql,
-            explanation=generated.explanation, df=df,
+            explanation=generated.explanation, df=df, model=current_model(),
         )
     except DailyQuotaError:
         raise  # 기다려도 안 풀림 — 러너가 중단·재개 안내를 하도록 전파

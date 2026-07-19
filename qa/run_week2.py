@@ -6,8 +6,9 @@ Week 2 실전 테스트 자동 러너 (무료 한도 대응판).
     python qa/run_week2.py --only 3,17   # 특정 번호만 재실험
     python qa/run_week2.py --sleep 20    # 페이스 조절
 
-flash 일일 한도가 소진됐으면 모델만 바꿔 계속:
-    GEMINI_MODEL=gemini-flash-lite-latest python qa/run_week2.py --start 8
+모델은 자동 스위칭: flash 일일 한도(PerDay) 감지 시 lite로 넘어가 계속 돈다.
+(체인 변경: GEMINI_MODEL_CHAIN=... / 특정 모델 강제: GEMINI_MODEL=...)
+어느 모델이 답했는지는 jsonl의 "model" 필드에 기록됨.
 
 한도 전략 (질문당 API 2콜 = classify + generate_sql, 총 ~35콜):
   - 질문 간격 기본 15초 → 분당 ~8콜 (무료 티어 분당 한도 아래)
@@ -109,6 +110,7 @@ def main(start: int = 1, sleep: float = DEFAULT_SLEEP, only: list[int] | None = 
                 "n": i, "question": question, "expected": expected,
                 "status": r.status, "verdict": verdict, "reason": r.reason,
                 "sql": r.sql, "safe_sql": r.safe_sql, "n_rows": r.n_rows,
+                "model": r.model,
             }, ensure_ascii=False) + "\n")
             if pos < len(indices) - 1:
                 time.sleep(sleep)
