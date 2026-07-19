@@ -62,15 +62,15 @@ flowchart LR
 | **marts** | `dbt/models/marts/` | Rebuilt on run | Analytics-ready returns & risk metrics |
 | **serve** | Streamlit reads marts | Read-only | Human-facing views |
 
-## Airflow DAG (target)
+## Airflow DAG
 
-DAG id: `etf_pipeline`
+DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
 
 | Task | Command / operator | Depends on |
 |------|-------------------|------------|
 | `extract_load_raw` | Bash: `python ingest/fetch_prices.py` | — |
-| `dbt_run` | Bash: `dbt run --project-dir dbt` | `extract_load_raw` |
-| `dbt_test` | Bash: `dbt test --project-dir dbt` | `dbt_run` |
+| `dbt_run` | Bash: `dbt deps && dbt run --profiles-dir .` (in `dbt/`) | `extract_load_raw` |
+| `dbt_test` | Bash: `dbt test --profiles-dir .` (in `dbt/`) | `dbt_run` |
 
 > **Rule:** Add tasks to the DAG only after each command succeeds manually from the CLI.
 

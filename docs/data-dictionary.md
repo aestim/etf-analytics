@@ -12,7 +12,7 @@ Definitions for raw files, warehouse tables, and mart outputs. Keep in sync with
 
 ## Raw (`data/raw/`)
 
-Parquet or CSV written by ingest. Partition suggestion: `data/raw/{ticker}/dt={YYYY-MM-DD}/prices.parquet`
+Parquet written by ingest, partitioned as `data/raw/{ticker}/dt={YYYY-MM-DD}/prices.parquet`
 
 | Column | Type | Description |
 |--------|------|-------------|

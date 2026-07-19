@@ -43,8 +43,8 @@ PIPELINE_ENV = {
 with DAG(
     dag_id="etf_pipeline",
     default_args=DEFAULT_ARGS,
-    description="SGOV/VGIT ingest → dbt → tests",
-    schedule_interval="@daily",
+    description="ETF universe ingest → dbt run → dbt test",
+    schedule="@daily",
     start_date=datetime(2024, 1, 1),
     catchup=False,
     tags=["etf", "portfolio"],

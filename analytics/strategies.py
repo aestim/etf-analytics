@@ -41,15 +41,10 @@ def dca(prices: pd.Series, every: int = 21) -> pd.Series:
     Equity = market value of holdings / total invested so far.
     """
     prices = prices.dropna()
-    shares = 0.0
-    invested = 0.0
-    values = []
-    for i, price in enumerate(prices):
-        if i % every == 0:
-            shares += 1.0 / price
-            invested += 1.0
-        values.append(shares * price / invested)
-    return pd.Series(values, index=prices.index)
+    is_buy = pd.Series(np.arange(len(prices)) % every == 0, index=prices.index)
+    shares = (is_buy / prices).cumsum()  # 1 unit buys 1/price shares on buy days
+    invested = is_buy.cumsum()
+    return shares * prices / invested
 
 
 def rebalance(prices: pd.DataFrame, weights: dict[str, float], every: int = 63) -> pd.Series:
@@ -58,16 +53,17 @@ def rebalance(prices: pd.DataFrame, weights: dict[str, float], every: int = 63) 
     `weights` maps column name -> target weight (should sum to 1).
     """
     prices = prices[list(weights)].dropna()
-    value = 1.0
-    holdings: dict[str, float] | None = None
-    values = []
-    for i, (_, row) in enumerate(prices.iterrows()):
-        if holdings is not None:
-            value = sum(shares * row[t] for t, shares in holdings.items())
-        if holdings is None or i % every == 0:
-            holdings = {t: value * w / row[t] for t, w in weights.items()}
-        values.append(value)
-    return pd.Series(values, index=prices.index)
+    w = pd.Series(weights)
+    period = np.arange(len(prices)) // every
+    # Within a period, value grows as the weighted sum of each asset's
+    # price relative to the period's first day (fixed shares in between).
+    growth = (prices / prices.groupby(period).transform("first")).mul(w).sum(axis=1)
+    # Chain periods: factor linking one period start to the next.
+    starts = prices.iloc[::every]
+    link = (starts / starts.shift(1)).mul(w).sum(axis=1)
+    link.iloc[0] = 1.0
+    base = link.cumprod().to_numpy()
+    return pd.Series(base[period] * growth.to_numpy(), index=prices.index)
 
 
 def sma_trend(risk: pd.Series, window: int = 200, park: pd.Series | None = None) -> pd.Series:
@@ -99,6 +95,9 @@ def infinite_buy(prices: pd.Series, n_splits: int = 40, take_profit: float = 0.1
     This is a stylized illustration of the popular retail strategy for
     leveraged ETFs — the real method has more rules (LOC orders, halves,
     variants). Deliberately simplified and deterministic for testing.
+
+    Kept as an explicit loop: each day's action depends on the running
+    cash/cost state (path-dependent), so it doesn't vectorize cleanly.
     """
     prices = prices.dropna()
     per_buy = 1.0 / n_splits
