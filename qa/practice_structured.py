@@ -38,6 +38,8 @@ path-dependent simulations (backtests, DCA), or data we don't have
 (dividends, fees, news, reasons why).
 
 Extract any tickers mentioned. Pick the single most relevant metric.
+Write `reason` as one short English sentence (the UI is English-only),
+regardless of the question's language.
 """
 
 QUESTIONS = [

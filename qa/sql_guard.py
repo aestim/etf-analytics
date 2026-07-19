@@ -48,20 +48,20 @@ def validate(sql: str) -> str:
     try:
         statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
     except sqlglot.errors.ParseError as e:
-        raise GuardError(f"SQL을 해석할 수 없음: {e}") from e
+        raise GuardError(f"SQL could not be parsed: {e}") from e
 
     if len(statements) != 1:
-        raise GuardError(f"문장은 정확히 1개여야 함 (받은 것: {len(statements)}개)")
+        raise GuardError(f"exactly one statement required (got {len(statements)})")
     tree = statements[0]
 
     if not isinstance(tree, exp.Select):
-        raise GuardError(f"SELECT 문만 허용됨 (받은 것: {tree.key.upper()})")
+        raise GuardError(f"only SELECT statements are allowed (got {tree.key.upper()})")
     if tree.args.get("into"):
-        raise GuardError("SELECT INTO(테이블 생성)는 허용되지 않음")
+        raise GuardError("SELECT INTO (table creation) is not allowed")
 
     for node in tree.walk():
         if isinstance(node, FORBIDDEN_NODES):
-            raise GuardError(f"허용되지 않는 구문 포함: {node.key.upper()}")
+            raise GuardError(f"forbidden clause: {node.key.upper()}")
 
     cte_names = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
     for table in tree.find_all(exp.Table):
@@ -71,7 +71,7 @@ def validate(sql: str) -> str:
         if schema not in ("", SCHEMA_NAME) or name not in ALLOWED_TABLES:
             shown = f"{schema}.{name}" if schema else name
             raise GuardError(
-                f"허용되지 않은 테이블: {shown} (허용: {SCHEMA_NAME}.{{{', '.join(ALLOWED_TABLES)}}})"
+                f"table not allowed: {shown} (allowed: {SCHEMA_NAME}.{{{', '.join(ALLOWED_TABLES)}}})"
             )
 
     limit = tree.args.get("limit")

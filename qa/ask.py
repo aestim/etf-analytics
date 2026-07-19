@@ -50,7 +50,7 @@ def _advance_model() -> bool:
     global _model_idx
     if _model_idx + 1 < len(MODEL_CHAIN):
         _model_idx += 1
-        print(f"   (일일 한도 → 모델 전환: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})")
+        print(f"   (daily quota → switching model: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})")
         return True
     return False
 
@@ -105,6 +105,8 @@ SELECT statement over the tables below. Rules:
 - Return at most {MAX_ROWS} rows; prefer ORDER BY that makes the table readable.
 - rolling_vol_30d is DAILY volatility (not annualized) — mention in explanation
   if the question says "연" or "annual".
+- Write `explanation` in English regardless of the question's language
+  (the UI is English-only).
 
 Database schema:
 {build_schema_prompt()}
@@ -134,12 +136,12 @@ def _with_backoff(fn, *args):
             if "PerDay" in msg or "per day" in msg.lower():
                 if _advance_model():
                     continue  # 다음 모델로 즉시 재시도 (한도는 모델별로 별도)
-                raise DailyQuotaError("모든 모델의 일일 무료 한도 소진") from e
+                raise DailyQuotaError("daily free-tier quota exhausted for all models") from e
             if wait is None or not ("429" in msg or "RESOURCE_EXHAUSTED" in msg):
                 raise
             m = re.search(r"retry(?:Delay)?\D*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
             delay = float(m.group(1)) + 1 if m else wait
-            print(f"   (429 분당 한도 — {delay:.0f}초 대기, 재시도 {attempt + 1}/{len(RETRY_WAITS)})")
+            print(f"   (429 rate limit — waiting {delay:.0f}s, retry {attempt + 1}/{len(RETRY_WAITS)})")
             time.sleep(delay)
 
 
@@ -162,7 +164,7 @@ def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry
             time.sleep(2)
             return _structured_call(system, contents, schema, _retry=False)
         raw = (getattr(response, "text", "") or "")[:200]
-        raise ValueError(f"LLM이 유효한 {schema.__name__} JSON을 주지 않음 (raw: {raw!r})")
+        raise ValueError(f"LLM did not return valid {schema.__name__} JSON (raw: {raw!r})")
     return response.parsed
 
 
@@ -176,7 +178,7 @@ You pick a chart for the result table of a data question. Fill ChartSpec only.
   "scatter" (relation of two numeric columns), "table" (lists, single values, else)
 - x / y must be existing column names; y must be numeric.
 - group_by: column to color by (e.g. ticker) when several series share the chart, else null.
-- title: short, in the question's language.
+- title: short, in English (the UI is English-only).
 """
 
 
@@ -267,18 +269,18 @@ def ask(question: str) -> pd.DataFrame | None:
     """CLI용 — answer()를 사람이 읽는 형태로 출력."""
     r = answer(question)
     if r.status == "refused_gate":
-        print(f"⛔ 답할 수 없는 질문입니다 — {r.reason}")
-        print("   대신 가격·수익률·변동성·드로다운의 조회/비교/순위는 가능해요.")
+        print(f"⛔ I can't answer that — {r.reason}")
+        print("   I can answer lookups, comparisons and rankings over prices, returns, volatility and drawdown.")
     elif r.status == "refused_guard":
-        print(f"⛔ 생성된 SQL이 안전 검사에서 거부됨: {r.reason}")
-        print(f"   (거부된 SQL: {r.sql})")
+        print(f"⛔ Generated SQL rejected by the safety guard: {r.reason}")
+        print(f"   (rejected SQL: {r.sql})")
     elif r.status == "error":
-        print(f"💥 실행 실패: {r.reason}")
+        print(f"💥 Failed: {r.reason}")
     else:
         print(f"💬 {r.explanation}")
         print(f"🔍 SQL: {r.safe_sql}\n")
         if r.df is None or r.df.empty:
-            print("(0행 — 조건에 맞는 데이터가 없습니다)")
+            print("(0 rows — no data matches the filters)")
         else:
             print(r.df.to_string(index=False))
     return r.df
@@ -295,19 +297,19 @@ def ask_with_chart(question: str) -> None:
     spec = validate_spec(_with_backoff(generate_chart_spec, question, df), df)
     fig = render(spec, df)
     if fig is None:
-        reason = TABLE_FALLBACK_REASONS.get("last", "LLM이 표를 선택")
-        print(f"\n📊 차트 대신 표 (사유: {reason})")
+        reason = TABLE_FALLBACK_REASONS.get("last", "the model chose a table")
+        print(f"\n📊 Table instead of a chart ({reason})")
         return
     path = save_html(fig, "ask")
-    print(f"\n📊 {spec.chart_type} 차트 저장: {path} (브라우저로 열기)")
+    print(f"\n📊 Saved {spec.chart_type} chart: {path} (open in a browser)")
 
 
 if __name__ == "__main__":
     import argparse
 
-    p = argparse.ArgumentParser(description="질문 → 표 (+ --chart면 차트까지)")
-    p.add_argument("question", nargs="+", help="자연어 질문")
-    p.add_argument("--chart", action="store_true", help="결과를 차트로도 저장 (API 1콜 추가)")
+    p = argparse.ArgumentParser(description="Natural-language question → table (+ chart with --chart)")
+    p.add_argument("question", nargs="+", help="question in English or Korean")
+    p.add_argument("--chart", action="store_true", help="also save a chart (one extra API call)")
     args = p.parse_args()
     q = " ".join(args.question)
     ask_with_chart(q) if args.chart else ask(q)

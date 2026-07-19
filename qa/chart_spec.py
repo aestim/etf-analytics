@@ -47,11 +47,11 @@ def validate_spec(spec: ChartSpec, df: pd.DataFrame) -> ChartSpec:
         return spec
     cols = set(df.columns)
     if not spec.x or not spec.y:
-        return fallback("x/y 미지정")
+        return fallback("x/y not specified")
     if spec.x not in cols or spec.y not in cols:
-        return fallback(f"없는 컬럼: {spec.x if spec.x not in cols else spec.y}")
+        return fallback(f"unknown column: {spec.x if spec.x not in cols else spec.y}")
     if not pd.api.types.is_numeric_dtype(df[spec.y]):
-        return fallback(f"y가 수치형 아님: {spec.y}")
+        return fallback(f"y is not numeric: {spec.y}")
     if spec.group_by and spec.group_by not in cols:
         spec = spec.model_copy(update={"group_by": None})
     return spec

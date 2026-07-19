@@ -70,7 +70,7 @@ def test_writes_and_ddl_rejected(bad):
 
 
 def test_multiple_statements_rejected():
-    with pytest.raises(GuardError, match="1개"):
+    with pytest.raises(GuardError, match="exactly one statement"):
         validate("SELECT 1; SELECT 2")
 
 
@@ -80,12 +80,12 @@ def test_piggyback_after_select_rejected():
 
 
 def test_non_whitelisted_table_rejected():
-    with pytest.raises(GuardError, match="허용되지 않은 테이블"):
+    with pytest.raises(GuardError, match="table not allowed"):
         validate("SELECT * FROM raw.etf_prices")
 
 
 def test_non_whitelisted_schema_rejected():
-    with pytest.raises(GuardError, match="허용되지 않은 테이블"):
+    with pytest.raises(GuardError, match="table not allowed"):
         validate("SELECT * FROM information_schema.tables")
 
 
