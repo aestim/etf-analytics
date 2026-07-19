@@ -53,7 +53,7 @@ def classify(question: str):
     client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
     # TODO 4: 
     response = client.models.generate_content(
-        model="gemini-flash-latest",
+        model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
         contents=question,
         config={
             "system_instruction": SYSTEM_PROMPT,
