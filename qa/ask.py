@@ -121,26 +121,53 @@ def _with_backoff(fn, *args):
             time.sleep(delay)
 
 
-def generate_sql(question: str, _retry: bool = True) -> SqlAnswer:
+def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry: bool = True):
+    """structured output 호출 공통부 — parsed=None(빈/잘린 응답)도 처리."""
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     response = client.models.generate_content(
         model=MODEL,
-        contents=question,
+        contents=contents,
         config={
-            "system_instruction": SQL_SYSTEM_PROMPT,
+            "system_instruction": system,
             "response_mime_type": "application/json",
-            "response_schema": SqlAnswer,
+            "response_schema": schema,
         },
     )
     if response.parsed is None:
-        # structured output도 보장이 아니다 — 빈 응답/잘린 응답/스키마 불일치면
+        # structured output도 보장이 아니다 — 스키마 불일치·잘린 응답이면
         # parsed가 조용히 None이 된다. 한 번 재시도 후 명확한 에러로 승격.
         if _retry:
             time.sleep(2)
-            return generate_sql(question, _retry=False)
+            return _structured_call(system, contents, schema, _retry=False)
         raw = (getattr(response, "text", "") or "")[:200]
-        raise ValueError(f"LLM이 유효한 SqlAnswer JSON을 주지 않음 (raw: {raw!r})")
+        raise ValueError(f"LLM이 유효한 {schema.__name__} JSON을 주지 않음 (raw: {raw!r})")
     return response.parsed
+
+
+def generate_sql(question: str) -> SqlAnswer:
+    return _structured_call(SQL_SYSTEM_PROMPT, question, SqlAnswer)
+
+
+CHART_SYSTEM_PROMPT = """
+You pick a chart for the result table of a data question. Fill ChartSpec only.
+- chart_type: "line" (time series), "bar" (category comparison/ranking),
+  "scatter" (relation of two numeric columns), "table" (lists, single values, else)
+- x / y must be existing column names; y must be numeric.
+- group_by: column to color by (e.g. ticker) when several series share the chart, else null.
+- title: short, in the question's language.
+"""
+
+
+def generate_chart_spec(question: str, df: pd.DataFrame):
+    """Week 3: 결과 표를 보고 차트 양식을 채우게 한다 (LLM은 코드 금지, 양식만)."""
+    from chart_spec import ChartSpec  # 지연 임포트 — 러너는 차트 없이도 돌게
+
+    contents = (
+        f"Question: {question}\n"
+        f"Columns and dtypes:\n{df.dtypes.to_string()}\n"
+        f"First rows:\n{df.head(5).to_string(index=False)}"
+    )
+    return _structured_call(CHART_SYSTEM_PROMPT, contents, ChartSpec)
 
 
 def run_readonly(sql: str) -> pd.DataFrame:
@@ -233,8 +260,30 @@ def ask(question: str) -> pd.DataFrame | None:
     return r.df
 
 
+def ask_with_chart(question: str) -> None:
+    """질문 → 표 → 차트 저장까지 한 번에 (Week 3 산출물)."""
+    df = ask(question)
+    if df is None or df.empty:
+        return
+    from chart_spec import TABLE_FALLBACK_REASONS, validate_spec
+    from render import render, save_html
+
+    spec = validate_spec(_with_backoff(generate_chart_spec, question, df), df)
+    fig = render(spec, df)
+    if fig is None:
+        reason = TABLE_FALLBACK_REASONS.get("last", "LLM이 표를 선택")
+        print(f"\n📊 차트 대신 표 (사유: {reason})")
+        return
+    path = save_html(fig, "ask")
+    print(f"\n📊 {spec.chart_type} 차트 저장: {path} (브라우저로 열기)")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print('사용법: python qa/ask.py "질문"')
-        sys.exit(1)
-    ask(" ".join(sys.argv[1:]))
+    import argparse
+
+    p = argparse.ArgumentParser(description="질문 → 표 (+ --chart면 차트까지)")
+    p.add_argument("question", nargs="+", help="자연어 질문")
+    p.add_argument("--chart", action="store_true", help="결과를 차트로도 저장 (API 1콜 추가)")
+    args = p.parse_args()
+    q = " ".join(args.question)
+    ask_with_chart(q) if args.chart else ask(q)

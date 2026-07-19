@@ -70,3 +70,4 @@ Thumbs.db
 
 # QA runner logs (week2_results.md는 커밋, 상세 jsonl은 로컬)
 qa/logs/
+qa/charts/

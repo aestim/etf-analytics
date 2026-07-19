@@ -24,8 +24,8 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
 
 1. **Intent gate** ✅ — Gemini structured output classifies questions into `data_query` / `out_of_scope` (predictions, investment advice, and backtest requests are refused) — see [`qa/`](qa/)
-2. **Text-to-SQL** — schema prompt auto-generated from dbt docs (`schema.yml` + `dim_etf`); generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout
-3. **Charts** — the model returns a chart-spec JSON (validated by pydantic); rendering is done only by whitelisted plotting functions
+2. **Text-to-SQL** ✅ — schema prompt auto-generated from dbt docs (`schema.yml` + `dim_etf`); generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout — see [`qa/ask.py`](qa/ask.py) + quota-aware test runner [`qa/run_week2.py`](qa/run_week2.py)
+3. **Charts** — the model returns a chart-spec JSON (validated by pydantic, invalid specs fall back to a table); rendering is done only by whitelisted plotting functions (`qa/ask.py --chart`)
 
 Design principle: **the LLM emits structured JSON only — generated code is never executed.**
 
