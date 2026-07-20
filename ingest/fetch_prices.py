@@ -121,11 +121,14 @@ def main() -> None:
     for ticker, df in frames.items():
         path = write_raw_parquet(df, ticker)
         print(f"  Wrote {path} ({len(df)} rows)")
-    try:
+    # Fail loud when a warehouse is configured: a swallowed load error lets
+    # Airflow/dbt "succeed" on stale data (silently wrong metrics). Parquet-only
+    # (no POSTGRES_HOST) is a legitimate mode and exits clean.
+    if os.getenv("POSTGRES_HOST"):
         load_postgres(pd.concat(frames.values(), ignore_index=True))
         print("Loaded raw.etf_prices")
-    except Exception as exc:  # noqa: BLE001 — portfolio script; log and continue without DB
-        print(f"Postgres skip: {exc}")
+    else:
+        print("No POSTGRES_HOST set — parquet-only (demo mode).")
 
 
 if __name__ == "__main__":
