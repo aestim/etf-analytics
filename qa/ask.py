@@ -203,6 +203,33 @@ def sslmode_for(host: str) -> str:
     return os.getenv("POSTGRES_SSLMODE", "prefer" if local else "require")
 
 
+def _reader_engine():
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import URL
+
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    url = URL.create(
+        "postgresql+psycopg2",
+        username=os.getenv("QA_DB_USER", "etf_reader"),
+        password=os.getenv("QA_DB_PASSWORD", "etf_reader"),
+        host=host,
+        port=int(os.getenv("POSTGRES_PORT", "5433")),
+        database=os.getenv("POSTGRES_DB", "etf_analytics"),
+    )
+    return create_engine(url, connect_args={"connect_timeout": 3, "sslmode": sslmode_for(host)})
+
+
+def reader_ping() -> tuple[bool, str]:
+    """Verify the read-only role can actually connect — surfaces a password
+    mismatch between init_db.sql and QA_DB_PASSWORD early and clearly."""
+    try:
+        with _reader_engine().connect() as conn:
+            conn.exec_driver_sql("select 1")
+        return True, ""
+    except Exception as e:  # noqa: BLE001
+        return False, str(e).splitlines()[0]
+
+
 def run_readonly(sql: str) -> pd.DataFrame:
     """Defence layers 2+3: read-only role + statement_timeout."""
     from sqlalchemy import create_engine

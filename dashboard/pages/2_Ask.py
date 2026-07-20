@@ -63,7 +63,7 @@ if _pw := _ask_password():
 # (e.g. Streamlit Cloud hasn't reinstalled requirements after a deploy), fail
 # gracefully with a clear message instead of a redacted crash page.
 try:
-    from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec  # noqa: E402
+    from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec, reader_ping  # noqa: E402
     from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
     from render import render  # noqa: E402
     from sql_guard import MAX_ROWS  # noqa: E402
@@ -76,6 +76,21 @@ except ImportError as exc:
     st.stop()
 
 LOG_PATH = _ROOT / "qa" / "logs" / "ask_ui.jsonl"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _reader_ok() -> tuple[bool, str]:
+    return reader_ping()
+
+
+ok, why = _reader_ok()
+if not ok:
+    st.error(
+        "The read-only account (`etf_reader`) can't connect, so queries would fail. "
+        "Check that `QA_DB_PASSWORD` matches the password set in `scripts/init_db.sql`.\n\n"
+        f"Details: {why}"
+    )
+    st.stop()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

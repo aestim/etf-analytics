@@ -22,11 +22,17 @@ CREATE TABLE IF NOT EXISTS raw.etf_prices (
 -- NOTE: this file only runs on a FRESH postgres volume. On an
 -- existing database, apply this block manually:
 --   docker compose exec -T postgres psql -U etf -d etf_analytics < scripts/init_db.sql
+--
+-- PASSWORD: 'etf_reader' is the LOCAL default and must match
+-- QA_DB_PASSWORD in .env (see .env.example). For any non-local /
+-- shared DB (Neon, Supabase, RDS): change this to a STRONG password
+-- when you apply the file, and set QA_DB_PASSWORD to the same value
+-- in your secrets. NEVER commit a real password to this file.
 -- ---------------------------------------------------------------
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'etf_reader') THEN
-        CREATE ROLE etf_reader LOGIN PASSWORD 'real_password';
+        CREATE ROLE etf_reader LOGIN PASSWORD 'etf_reader';
     END IF;
 END $$;
 
