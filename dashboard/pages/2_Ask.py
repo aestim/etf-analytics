@@ -66,6 +66,7 @@ try:
     from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec  # noqa: E402
     from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
     from render import render  # noqa: E402
+    from sql_guard import MAX_ROWS  # noqa: E402
 except ImportError as exc:
     st.error(
         "The Ask feature is temporarily unavailable — a dependency failed to load "
@@ -115,6 +116,11 @@ def show_assistant(entry: dict, key: str) -> None:
             # otherwise collide on Streamlit's content-based element id.
             st.plotly_chart(fig, width="stretch", key=f"chart_{key}")
         st.dataframe(entry["df"], width="stretch", hide_index=True, key=f"df_{key}")
+        if entry.get("truncated"):
+            st.warning(
+                f"Capped at {MAX_ROWS} rows — this result may be cut short. "
+                "Narrow the tickers or shorten the date range to see the full series."
+            )
         with st.expander("Executed SQL"):
             st.code(entry["safe_sql"], language="sql")
         if entry.get("chart_note"):
@@ -164,7 +170,7 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                         chart_note = f"Chart generation failed, showing table: {e}"
                 entry = {"role": "assistant", "kind": "data", "df": r.df,
                          "explanation": r.explanation, "safe_sql": r.safe_sql,
-                         "fig": fig, "chart_note": chart_note}
+                         "fig": fig, "chart_note": chart_note, "truncated": r.truncated}
                 log_event(question, "answered", sql=r.safe_sql, n_rows=r.n_rows, model=r.model)
         # key = its future index in the chat list (append-only → stable across reruns)
         show_assistant(entry, key=str(len(st.session_state.chat)))

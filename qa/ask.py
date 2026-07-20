@@ -246,6 +246,11 @@ class AskResult:
     def n_rows(self) -> int | None:
         return None if self.df is None else len(self.df)
 
+    @property
+    def truncated(self) -> bool:
+        """Result hit the guard's row cap — likely cut short, so warn the user."""
+        return self.df is not None and len(self.df) >= MAX_ROWS
+
 
 def answer(question: str) -> AskResult:
     """Run one question through the whole pipeline; return a structured result.
@@ -295,6 +300,9 @@ def ask(question: str) -> pd.DataFrame | None:
             print("(0 rows — no data matches the filters)")
         else:
             print(r.df.to_string(index=False))
+            if r.truncated:
+                print(f"\n⚠️  Capped at {MAX_ROWS} rows — the result may be cut short. "
+                      "Narrow the tickers or date range for the full series.")
     return r.df
 
 

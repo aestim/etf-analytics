@@ -21,7 +21,11 @@ from sqlglot import exp
 
 from schema_prompt import ALLOWED_TABLES, SCHEMA_NAME
 
-MAX_ROWS = 200  # human-readable table size + prevents accidental full-table dumps
+# Ceiling to stop pathological full-table dumps, NOT a readability cap — a daily
+# multi-year time series over a few tickers is thousands of rows (3y × 2 tickers
+# ≈ 1500), and a smaller cap silently truncated those to the earliest slice.
+# 10k covers ~4 tickers × 10y while still bounding runaway queries.
+MAX_ROWS = 10000
 
 # Collect only the node types that exist in the installed sqlglot version
 _FORBIDDEN_NAMES = (
