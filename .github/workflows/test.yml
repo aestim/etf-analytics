@@ -26,7 +26,7 @@ jobs:
           ruff check --select E9,F63,F7,F82 .
 
       - name: Run pytest
-        run: pytest -q
+        run: pytest tests -q
 
   dbt_parse:
     runs-on: ubuntu-latest
