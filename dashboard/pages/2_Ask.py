@@ -96,7 +96,7 @@ def log_event(question: str, status: str, sql: str = "", n_rows=None, error: str
         }, ensure_ascii=False) + "\n")
 
 
-def show_assistant(entry: dict) -> None:
+def show_assistant(entry: dict, key: str) -> None:
     kind = entry["kind"]
     if kind == "refusal":
         st.markdown(
@@ -111,8 +111,10 @@ def show_assistant(entry: dict) -> None:
         if entry.get("fig") is not None:
             fig = entry["fig"]
             fig.update_layout(**PLOTLY_LAYOUT)
-            st.plotly_chart(fig, width="stretch")
-        st.dataframe(entry["df"], width="stretch", hide_index=True)
+            # Unique key per message — identical charts across chat history would
+            # otherwise collide on Streamlit's content-based element id.
+            st.plotly_chart(fig, width="stretch", key=f"chart_{key}")
+        st.dataframe(entry["df"], width="stretch", hide_index=True, key=f"df_{key}")
         with st.expander("Executed SQL"):
             st.code(entry["safe_sql"], language="sql")
         if entry.get("chart_note"):
@@ -124,12 +126,12 @@ auto_chart = st.toggle("Auto-generate chart (one extra API call per question)", 
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
-for msg in st.session_state.chat:
+for i, msg in enumerate(st.session_state.chat):
     with st.chat_message(msg["role"]):
         if msg["role"] == "user":
             st.markdown(msg["text"])
         else:
-            show_assistant(msg)
+            show_assistant(msg, key=str(i))
 
 if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
     st.session_state.chat.append({"role": "user", "text": question})
@@ -164,5 +166,6 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                          "explanation": r.explanation, "safe_sql": r.safe_sql,
                          "fig": fig, "chart_note": chart_note}
                 log_event(question, "answered", sql=r.safe_sql, n_rows=r.n_rows, model=r.model)
-        show_assistant(entry)
+        # key = its future index in the chat list (append-only → stable across reruns)
+        show_assistant(entry, key=str(len(st.session_state.chat)))
     st.session_state.chat.append(entry)
