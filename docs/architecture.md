@@ -62,6 +62,35 @@ flowchart LR
 | **marts** | `dbt/models/marts/` | Rebuilt on run | Analytics-ready returns & risk metrics |
 | **serve** | Streamlit reads marts | Read-only | Human-facing views |
 
+## LLM Q&A layer — security path
+
+Natural-language questions never reach the database as free text. Every request
+passes through a fixed chain where **the LLM only emits structured JSON — it
+never executes code**, and each stage can reject the request.
+
+```mermaid
+flowchart LR
+  U[User question<br/>EN/KR] --> G{Intent gate<br/>structured output}
+  G -- out_of_scope<br/>(advice · prediction · backtest) --> R1[Refuse politely]
+  G -- data_query --> S[SQL generation<br/>structured JSON only]
+  S --> V{sqlglot guard<br/>single SELECT · allowlist tables · forced LIMIT}
+  V -- rejected --> R2[Refuse + show reason]
+  V -- safe SQL --> X[(Execute as etf_reader<br/>read-only · SET LOCAL statement_timeout)]
+  X --> C[ChartSpec<br/>pydantic-validated]
+  C -- invalid --> T[Table fallback]
+  C -- valid --> P[Whitelisted renderer]
+
+  classDef gate fill:#3b2f5e,stroke:#8a7fb8,color:#fff;
+  classDef exec fill:#1f4d3a,stroke:#5fae86,color:#fff;
+  class G,V gate;
+  class X exec;
+```
+
+Defence in depth: even if the gate and the sqlglot allowlist were both bypassed,
+execution runs as `etf_reader` (SELECT-only on `public_marts`), so writes and
+non-whitelisted tables are impossible at the database level. Generated SQL is
+surfaced in the UI for transparency and auditability.
+
 ## Airflow DAG
 
 DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
