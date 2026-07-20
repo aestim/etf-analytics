@@ -168,9 +168,14 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                             chart_note = f"Showing a table instead of a chart ({why})"
                     except Exception as e:  # noqa: BLE001 — chart failures must not kill the table
                         chart_note = f"Chart generation failed, showing table: {e}"
+                # getattr fallback: survives a stale in-memory ask.py after an
+                # auto-redeploy (module cached without the newer 'truncated' prop).
+                truncated = getattr(r, "truncated", None)
+                if truncated is None:
+                    truncated = r.df is not None and len(r.df) >= MAX_ROWS
                 entry = {"role": "assistant", "kind": "data", "df": r.df,
                          "explanation": r.explanation, "safe_sql": r.safe_sql,
-                         "fig": fig, "chart_note": chart_note, "truncated": r.truncated}
+                         "fig": fig, "chart_note": chart_note, "truncated": truncated}
                 log_event(question, "answered", sql=r.safe_sql, n_rows=r.n_rows, model=r.model)
         # key = its future index in the chat list (append-only → stable across reruns)
         show_assistant(entry, key=str(len(st.session_state.chat)))
