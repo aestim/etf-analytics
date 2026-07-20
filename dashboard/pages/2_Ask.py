@@ -59,9 +59,20 @@ if _pw := _ask_password():
         st.info("This public demo requires a password (it shares a free LLM quota).")
         st.stop()
 
-from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec  # noqa: E402
-from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
-from render import render  # noqa: E402
+# The qa/ pipeline pulls in google-genai etc. If those aren't installed yet
+# (e.g. Streamlit Cloud hasn't reinstalled requirements after a deploy), fail
+# gracefully with a clear message instead of a redacted crash page.
+try:
+    from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec  # noqa: E402
+    from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
+    from render import render  # noqa: E402
+except ImportError as exc:
+    st.error(
+        "The Ask feature is temporarily unavailable — a dependency failed to load "
+        f"({exc.name}). If you just deployed, reboot the app so it reinstalls "
+        "requirements.txt (Manage app → Reboot)."
+    )
+    st.stop()
 
 LOG_PATH = _ROOT / "qa" / "logs" / "ask_ui.jsonl"
 
