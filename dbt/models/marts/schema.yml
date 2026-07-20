@@ -50,6 +50,17 @@ models:
 
   - name: mart_etf_risk_metrics
     description: Rolling risk metrics per ETF per trading date, derived from mart_etf_returns. Use for volatility and drawdown questions.
+    tests:
+      # Freshness gate: fail (not warn) if the newest metric date is over a week
+      # old — catches a stalled ingest serving silently stale numbers. 7 days
+      # absorbs weekends/holidays; anything older is a real problem.
+      - dbt_utils.recency:
+          arguments:
+            datepart: day
+            field: as_of_date
+            interval: 7
+          config:
+            severity: error
     columns:
       - name: ticker
         description: ETF ticker symbol, uppercase
@@ -59,6 +70,8 @@ models:
         tests: [not_null]
       - name: rolling_vol_30d
         description: Rolling sample standard deviation of daily returns over the last 30 trading days (daily volatility, NOT annualized; multiply by sqrt(252) to annualize). Computed over fewer days at the start of a series.
+      - name: annualized_vol_30d
+        description: rolling_vol_30d scaled to an annual figure (× sqrt(252)) so it matches how volatility is usually quoted. Use this for "annual/연 volatility" questions.
       - name: drawdown
         description: Decline from the running maximum adjusted close, as a negative fraction (0 = at peak, -0.12 = 12% below peak)
       - name: as_of_date

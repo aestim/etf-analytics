@@ -20,4 +20,12 @@ metrics as (
     from returns
 )
 
-select * from metrics
+select
+    ticker,
+    price_date,
+    rolling_vol_30d,
+    -- annualize daily vol so results match how volatility is usually quoted
+    rolling_vol_30d * sqrt(252) as annualized_vol_30d,
+    drawdown,
+    as_of_date
+from metrics

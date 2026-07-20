@@ -104,8 +104,8 @@ SELECT statement over the tables below. Rules:
 - Map plain-language groups (e.g. "미국 장기채", "leveraged") to dim_etf
   asset_class / sub_class values from the universe list.
 - Return at most {MAX_ROWS} rows; prefer ORDER BY that makes the table readable.
-- rolling_vol_30d is DAILY volatility (not annualized) — mention in explanation
-  if the question says "연" or "annual".
+- rolling_vol_30d is DAILY volatility; use annualized_vol_30d when the question
+  asks for "annual" / "연" volatility (they are the same series × sqrt(252)).
 - Write `explanation` in English regardless of the question's language
   (the UI is English-only).
 

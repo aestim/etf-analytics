@@ -140,6 +140,7 @@ def _parquet_marts() -> tuple[pd.DataFrame, pd.DataFrame]:
     risk["rolling_vol_30d"] = grouped.transform(
         lambda s: s.pct_change().rolling(30, min_periods=2).std()
     )
+    risk["annualized_vol_30d"] = risk["rolling_vol_30d"] * (252 ** 0.5)
     risk["drawdown"] = grouped.transform(lambda s: s / s.cummax() - 1.0)
     return returns, risk
 
@@ -168,7 +169,7 @@ def load_mart_returns() -> pd.DataFrame:
 def load_mart_risk() -> pd.DataFrame:
     if warehouse_available():
         query = """
-            select ticker, price_date, rolling_vol_30d, drawdown
+            select ticker, price_date, rolling_vol_30d, annualized_vol_30d, drawdown
             from public_marts.mart_etf_risk_metrics
             order by ticker, price_date
         """
