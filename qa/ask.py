@@ -196,28 +196,37 @@ def generate_chart_spec(question: str, df: pd.DataFrame):
     return _structured_call(CHART_SYSTEM_PROMPT, contents, ChartSpec)
 
 
+def sslmode_for(host: str) -> str:
+    """Managed Postgres (Neon/Supabase) requires SSL; local Docker has none.
+    Default to 'require' unless the host is local — override with POSTGRES_SSLMODE."""
+    local = host in ("localhost", "127.0.0.1", "", "postgres")
+    return os.getenv("POSTGRES_SSLMODE", "prefer" if local else "require")
+
+
 def run_readonly(sql: str) -> pd.DataFrame:
     """Defence layers 2+3: read-only role + statement_timeout."""
     from sqlalchemy import create_engine
     from sqlalchemy.engine import URL
 
+    host = os.getenv("POSTGRES_HOST", "localhost")
     url = URL.create(
         "postgresql+psycopg2",
         username=os.getenv("QA_DB_USER", "etf_reader"),
         password=os.getenv("QA_DB_PASSWORD", "etf_reader"),
-        host=os.getenv("POSTGRES_HOST", "localhost"),
+        host=host,
         port=int(os.getenv("POSTGRES_PORT", "5433")),
         database=os.getenv("POSTGRES_DB", "etf_analytics"),
     )
+    # NB: statement_timeout is NOT passed as a startup option — Neon's pooler
+    # (pgbouncer) rejects those. Set it as SET LOCAL inside the transaction so
+    # the read-only query still can't run away (defence layer 3).
     engine = create_engine(
         url,
-        connect_args={
-            "connect_timeout": 3,
-            "sslmode": os.getenv("POSTGRES_SSLMODE", "prefer"),
-            "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
-        },
+        connect_args={"connect_timeout": 3, "sslmode": sslmode_for(host)},
     )
-    return pd.read_sql(sql, engine)
+    with engine.begin() as conn:
+        conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}")
+        return pd.read_sql(sql, conn)
 
 
 @dataclass

@@ -77,13 +77,14 @@ def get_engine():
         port=int(os.getenv("POSTGRES_PORT", "5433")),
         database=os.getenv("POSTGRES_DB", "etf_analytics"),
     )
+    # Managed Postgres (Neon/Supabase) requires SSL; local Docker has none.
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    local = host in ("localhost", "127.0.0.1", "", "postgres")
+    sslmode = os.getenv("POSTGRES_SSLMODE", "prefer" if local else "require")
     return create_engine(
         url,
         pool_pre_ping=True,
-        connect_args={
-            "connect_timeout": 3,
-            "sslmode": os.getenv("POSTGRES_SSLMODE", "prefer"),  # managed Postgres requires SSL
-        },
+        connect_args={"connect_timeout": 3, "sslmode": sslmode},
     )
 
 

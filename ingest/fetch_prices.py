@@ -76,13 +76,15 @@ def load_postgres(df: pd.DataFrame) -> None:
     import psycopg2
     from psycopg2.extras import execute_values
 
+    # Managed Postgres (Neon/Supabase) requires SSL; local Docker has none.
+    _local = host in ("localhost", "127.0.0.1", "", "postgres")
     conn = psycopg2.connect(
         host=host,
         port=os.getenv("POSTGRES_PORT", "5432"),
         dbname=os.getenv("POSTGRES_DB", "etf_analytics"),
         user=os.getenv("POSTGRES_USER", "etf"),
         password=os.getenv("POSTGRES_PASSWORD", "etf"),
-        sslmode=os.getenv("POSTGRES_SSLMODE", "prefer"),  # managed Postgres requires SSL
+        sslmode=os.getenv("POSTGRES_SSLMODE", "prefer" if _local else "require"),
     )
     rows = [
         (
