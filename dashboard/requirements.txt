@@ -4,3 +4,10 @@ plotly>=5.18.0
 psycopg2-binary>=2.9.9
 python-dotenv>=1.0.0
 sqlalchemy>=2.0.0
+pyarrow>=14.0.0
+# Ask page (qa/ pipeline): Streamlit Cloud installs THIS file (nearest the main
+# module dashboard/app.py), so the qa deps must live here too, not only in root.
+google-genai>=1.0.0
+pydantic>=2.0.0
+sqlglot>=25.0.0
+pyyaml>=6.0
