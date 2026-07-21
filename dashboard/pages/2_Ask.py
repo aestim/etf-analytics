@@ -72,6 +72,7 @@ try:
         reader_ping,
     )
     from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
+    from presentation import is_percent_metric  # noqa: E402
     from render import render  # noqa: E402
     from sql_guard import MAX_ROWS  # noqa: E402
 except ImportError as exc:
@@ -139,7 +140,18 @@ def show_assistant(entry: dict, key: str) -> None:
             # Unique key per message — identical charts across chat history would
             # otherwise collide on Streamlit's content-based element id.
             st.plotly_chart(fig, width="stretch", key=f"chart_{key}")
-        st.dataframe(entry["df"], width="stretch", hide_index=True, key=f"df_{key}")
+        percent_columns = {
+            column: st.column_config.NumberColumn(format="percent")
+            for column in entry["df"].columns
+            if is_percent_metric(column)
+        }
+        st.dataframe(
+            entry["df"],
+            width="stretch",
+            hide_index=True,
+            key=f"df_{key}",
+            column_config=percent_columns,
+        )
         if entry.get("truncated"):
             st.warning(
                 f"Capped at {MAX_ROWS} rows — this result may be cut short. "

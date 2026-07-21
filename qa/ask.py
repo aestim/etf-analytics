@@ -71,9 +71,13 @@ class SqlAnswer(BaseModel):
     explanation: str  # one or two sentences on how the SQL answers the question
 
 
+DEFAULT_RETURN_LOOKBACK = "1 year"
+MIN_DEFAULT_RETURN_OBSERVATIONS = 200
+
+
 # Few-shot "question → correct SQL" pairs. Their job is to teach style
-# (qualified schema paths, date handling, aggregation tricks) — 2-3 suffice.
-FEW_SHOTS = """
+# (qualified schema paths, date handling, aggregation tricks).
+FEW_SHOTS = f"""
 Example 1
 Q: 지난 1년 TLT 변동성 어땠어?
 SQL: SELECT price_date, rolling_vol_30d
@@ -100,6 +104,21 @@ SQL: SELECT ticker, EXP(SUM(LN(1 + daily_return))) - 1 AS ytd_return
      GROUP BY ticker
      ORDER BY ytd_return DESC
      LIMIT 5
+
+Example 4
+Q: 가장 수익률 높은 ETF 3개 보여줘
+SQL: SELECT ticker,
+            MIN(price_date) AS period_start,
+            MAX(price_date) AS as_of_date,
+            COUNT(daily_return) AS observations,
+            EXP(SUM(LN(1 + daily_return))) - 1 AS cumulative_return
+     FROM public_marts.mart_etf_returns
+     WHERE price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RETURN_LOOKBACK}'
+       AND daily_return IS NOT NULL
+     GROUP BY ticker
+     HAVING COUNT(daily_return) >= {MIN_DEFAULT_RETURN_OBSERVATIONS}
+     ORDER BY cumulative_return DESC
+     LIMIT 3
 """
 
 SQL_SYSTEM_PROMPT = f"""
@@ -112,10 +131,18 @@ SELECT statement over the tables below. Rules:
 - Map plain-language groups (e.g. "미국 장기채", "leveraged") to dim_etf
   asset_class / sub_class values from the universe list.
 - Return at most {MAX_ROWS} rows; prefer ORDER BY that makes the table readable.
+- If a return/performance ranking omits a period, use the trailing
+  {DEFAULT_RETURN_LOOKBACK}; this is a DEFAULT LOOKBACK, not a ban on explicit
+  shorter periods such as today, MTD or 3 months.
+- For that default trailing-{DEFAULT_RETURN_LOOKBACK} ranking, return ticker,
+  MIN(price_date) AS period_start, MAX(price_date) AS as_of_date,
+  COUNT(daily_return) AS observations, and the compounded return. Require
+  HAVING COUNT(daily_return) >= {MIN_DEFAULT_RETURN_OBSERVATIONS} so ETFs with
+  incomplete history are not ranked against full-period observations.
 - rolling_vol_30d is DAILY volatility; use annualized_vol_30d when the question
   asks for "annual" / "연" volatility (they are the same series × sqrt(252)).
 - Write `explanation` in English regardless of the question's language
-  (the UI is English-only).
+  (the UI is English-only). State the applied period explicitly.
 
 Database schema:
 {build_schema_prompt()}
@@ -278,6 +305,7 @@ You pick a chart for the result table of a data question. Fill ChartSpec only.
 - x / y must be existing column names; y must be numeric.
 - group_by: column to color by (e.g. ticker) when several series share the chart, else null.
 - title: short, in English (the UI is English-only).
+- When period_start / as_of_date columns exist, mention the period in the title.
 """
 
 

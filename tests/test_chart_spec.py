@@ -60,3 +60,12 @@ def test_renderers_return_figure(chart_type, df):
 
 def test_table_spec_renders_none(df):
     assert render(ChartSpec(chart_type="table"), df) is None
+
+
+def test_return_chart_uses_percentage_axis():
+    returns = pd.DataFrame({"ticker": ["SPY", "QQQ"], "cumulative_return": [0.12, 0.2]})
+    fig = render(
+        ChartSpec(chart_type="bar", x="ticker", y="cumulative_return"),
+        returns,
+    )
+    assert fig.layout.yaxis.tickformat == ".1%"

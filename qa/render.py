@@ -18,6 +18,7 @@ import pandas as pd
 import plotly.express as px
 
 from chart_spec import ChartSpec
+from presentation import is_percent_metric
 
 CHARTS_DIR = Path(__file__).resolve().parent / "charts"
 
@@ -32,7 +33,10 @@ def render(spec: ChartSpec, df: pd.DataFrame):
     if spec.title:
         kwargs["title"] = spec.title
     renderers = {"line": px.line, "bar": px.bar, "scatter": px.scatter}
-    return renderers[spec.chart_type](df, **kwargs)
+    fig = renderers[spec.chart_type](df, **kwargs)
+    if is_percent_metric(spec.y):
+        fig.update_yaxes(tickformat=".1%")
+    return fig
 
 
 def save_html(fig, name_hint: str = "chart") -> Path:
