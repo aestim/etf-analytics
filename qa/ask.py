@@ -22,10 +22,11 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from google import genai
 from google.genai import errors as genai_errors
+from httpx import TimeoutException
 from pydantic import BaseModel
 
+from gemini_runtime import new_client
 from practice_structured import classify  # reuse the Week 1 intent gate as stage 1
 from schema_prompt import SCHEMA_NAME, build_schema_prompt
 from sql_guard import MAX_ROWS, GuardError, validate
@@ -123,7 +124,8 @@ Database schema:
 """
 
 
-RATE_LIMIT_WAITS = (20, 45, 90)  # per-minute 429s often clear after a longer wait
+RATE_LIMIT_WAITS = (2, 5)  # keep interactive requests bounded before model failover
+RATE_LIMIT_MAX_SERVER_WAIT = 5.0
 UNAVAILABLE_WAITS = (1, 2, 4)  # 503 capacity errors: retry briefly, then fail over
 RETRY_JITTER_SECONDS = 1.0
 
@@ -159,12 +161,18 @@ def _api_status_code(exc: Exception) -> int | None:
     return None
 
 
+def _is_timeout(exc: Exception) -> bool:
+    """Recognize SDK/network timeouts without matching unrelated error text."""
+    return isinstance(exc, (TimeoutException, TimeoutError))
+
+
 def _with_backoff(fn, *args):
     """Call an LLM function with bounded retry and model failover.
 
-    - Per-minute 429: honour retryDelay (or use a longer exponential wait).
+    - Per-minute 429: wait briefly, then fail over instead of blocking the UI.
     - Daily quota: switch model immediately; waiting cannot help.
     - 503/UNAVAILABLE: make a few short, jittered retries, then switch model.
+    - Network timeout: the request already waited 20s, so fail over immediately.
 
     The model pointer is intentionally retained after a failover: a provider
     that is unavailable now is unlikely to recover during the same Streamlit
@@ -183,6 +191,14 @@ def _with_backoff(fn, *args):
                     rate_attempt = unavailable_attempt = 0
                     continue  # retry immediately on the next model (quotas are per model)
                 raise DailyQuotaError("daily free-tier quota exhausted for all models") from e
+
+            if _is_timeout(e):
+                if _advance_model():
+                    rate_attempt = unavailable_attempt = 0
+                    continue
+                raise ProviderUnavailableError(
+                    "all configured LLM models timed out"
+                ) from e
 
             if status_code == 503:
                 if unavailable_attempt < len(UNAVAILABLE_WAITS):
@@ -203,9 +219,15 @@ def _with_backoff(fn, *args):
             if status_code != 429:
                 raise
             if rate_attempt >= len(RATE_LIMIT_WAITS):
-                raise
+                if _advance_model():
+                    rate_attempt = unavailable_attempt = 0
+                    continue
+                raise ProviderUnavailableError(
+                    "all configured LLM models are temporarily rate-limited"
+                ) from e
             m = re.search(r"retry(?:Delay)?\D*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
-            base_delay = float(m.group(1)) + 1 if m else RATE_LIMIT_WAITS[rate_attempt]
+            suggested_delay = float(m.group(1)) + 1 if m else RATE_LIMIT_WAITS[rate_attempt]
+            base_delay = min(suggested_delay, RATE_LIMIT_MAX_SERVER_WAIT)
             delay = _sleep_with_jitter(base_delay)
             rate_attempt += 1
             print(f"   (429 rate limit — waiting {delay:.1f}s, retry {rate_attempt}/{len(RATE_LIMIT_WAITS)})")
@@ -213,16 +235,16 @@ def _with_backoff(fn, *args):
 
 def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry: bool = True):
     """Shared structured-output call — also handles parsed=None (empty/truncated)."""
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    response = client.models.generate_content(
-        model=current_model(),
-        contents=contents,
-        config={
-            "system_instruction": system,
-            "response_mime_type": "application/json",
-            "response_schema": schema,
-        },
-    )
+    with new_client() as client:
+        response = client.models.generate_content(
+            model=current_model(),
+            contents=contents,
+            config={
+                "system_instruction": system,
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+            },
+        )
     if response.parsed is None:
         # Structured output is not a guarantee — on schema mismatch or a
         # truncated response, .parsed is silently None. Retry once, then

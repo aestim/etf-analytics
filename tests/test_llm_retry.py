@@ -64,6 +64,54 @@ def test_unavailable_word_without_503_is_not_retried(reset_model_chain):
     assert reset_model_chain == []
 
 
+def test_timeout_fails_over_immediately(reset_model_chain):
+    calls = []
+
+    def call():
+        calls.append(ask.current_model())
+        if ask.current_model() == "primary":
+            raise TimeoutError("request timed out")
+        return "ok"
+
+    assert ask._with_backoff(call) == "ok"
+    assert calls == ["primary", "fallback"]
+    assert reset_model_chain == []
+
+
+def test_all_models_timeout_returns_clear_error(reset_model_chain):
+    with pytest.raises(ask.ProviderUnavailableError, match="timed out"):
+        ask._with_backoff(lambda: (_ for _ in ()).throw(TimeoutError()))
+    assert reset_model_chain == []
+
+
+def test_429_retries_briefly_then_fails_over(reset_model_chain):
+    calls = []
+
+    def call():
+        calls.append(ask.current_model())
+        if ask.current_model() == "primary":
+            raise RuntimeError("429 RESOURCE_EXHAUSTED: retry later")
+        return "ok"
+
+    assert ask._with_backoff(call) == "ok"
+    assert calls == ["primary", "primary", "primary", "fallback"]
+    assert reset_model_chain == [2.0, 5.0]
+
+
+def test_429_server_delay_is_capped(reset_model_chain):
+    attempts = 0
+
+    def call():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED: retryDelay 59s")
+        return "ok"
+
+    assert ask._with_backoff(call) == "ok"
+    assert reset_model_chain == [5.0]
+
+
 def test_daily_quota_fails_over_without_wait(reset_model_chain):
     calls = []
 

@@ -12,8 +12,9 @@ import os
 from typing import Literal
 
 from dotenv import load_dotenv
-from google import genai
 from pydantic import BaseModel
+
+from gemini_runtime import new_client
 
 load_dotenv()
 
@@ -54,16 +55,16 @@ QUESTIONS = [
 
 
 def classify(question: str, model: str | None = None):
-    client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
-    response = client.models.generate_content(
-        model=model or os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
-        contents=question,
-        config={
-            "system_instruction": SYSTEM_PROMPT,
-            "response_mime_type": "application/json",
-            "response_schema": QuestionIntent,
-        },
-    )
+    with new_client() as client:
+        response = client.models.generate_content(
+            model=model or os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
+            contents=question,
+            config={
+                "system_instruction": SYSTEM_PROMPT,
+                "response_mime_type": "application/json",
+                "response_schema": QuestionIntent,
+            },
+        )
     return response.parsed
 
 
