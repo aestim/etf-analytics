@@ -25,6 +25,12 @@ that need a live data warehouse or an external provider.
 - Pull-request CI does not connect to Postgres. The SQL guard and orchestration are
   tested offline; live dbt assertions run in the scheduled workflow when secrets exist.
 
+The quota-aware `qa/run_week2.py` set keeps semantic regressions that offline
+tests cannot prove: explicit past-10-year queries must execute, descriptive
+`in 10 years` means a historical window while `10 years from now` is refused,
+long-term return uses CAGR, liquidity uses dollar volume, and generic versus
+explicitly leveraged universes remain distinct.
+
 ## Local commands
 
 ```bash

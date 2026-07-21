@@ -61,6 +61,26 @@ QUESTIONS: list[tuple[str, str]] = [
     ("하이일드랑 투자등급 회사채 변동성 비교해줘", "data"),  # HY vs IG corporate volatility
     ("레버리지 배수와 연환산 변동성의 상관관계는?", "data"),
     ("거래량과 변동성 사이에 관계가 있나?", "data"),
+    (
+        "Over the past 10 years, have ETFs with higher average trading volume "
+        "generally had higher annualized volatility?",
+        "data",
+    ),
+    (
+        "Among unleveraged ETFs, what is the relationship between 10-year CAGR "
+        "and annualized volatility?",
+        "data",
+    ),
+    (
+        "Compare QQQ and IWM over the past 10 years by CAGR and annualized volatility.",
+        "data",
+    ),
+    (
+        "Include leveraged ETFs: how did 1-year return relate to annualized volatility?",
+        "data",
+    ),
+    ("Are high-volume ETFs generally more volatile in 10 years?", "data"),
+    ("Will high-volume ETFs be more volatile 10 years from now?", "refuse"),
     ("TQQQ 지금 사도 돼?", "refuse"),  # investment advice
     ("TLT 다음 달에 오를까?", "refuse"),  # prediction
     ("무한매수법 백테스트 돌려줘", "refuse"),  # backtest request

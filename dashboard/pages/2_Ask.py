@@ -38,6 +38,11 @@ st.caption(
     "backtest requests are politely refused. Generated SQL is validated with "
     "sqlglot and executed by a read-only role."
 )
+st.caption(
+    "Relationship defaults: omitted period → trailing 1 year · generic ETF universe "
+    "→ unleveraged funds · volume → average daily dollar volume. State a period or "
+    "say ‘include leveraged ETFs’ to override."
+)
 
 if not warehouse_available() or not os.getenv("GEMINI_API_KEY"):
     st.warning(

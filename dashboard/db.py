@@ -16,8 +16,6 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from chart_colors import ticker_color_map
-
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 

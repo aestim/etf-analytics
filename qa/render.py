@@ -17,7 +17,7 @@ import pandas as pd
 import plotly.express as px
 
 from chart_spec import ChartSpec
-from presentation import is_percent_metric
+from presentation import is_dollar_metric, is_percent_metric
 
 CHARTS_DIR = Path(__file__).resolve().parent / "charts"
 
@@ -35,6 +35,12 @@ def render(spec: ChartSpec, df: pd.DataFrame):
     fig = renderers[spec.chart_type](df, **kwargs)
     if spec.chart_type == "scatter" and is_percent_metric(spec.x):
         fig.update_xaxes(tickformat=".1%")
+    if spec.chart_type == "scatter" and is_dollar_metric(spec.x):
+        fig.update_xaxes(
+            type="log",
+            tickprefix="$",
+            title_text="Average Daily Dollar Volume (USD, log scale)",
+        )
     if is_percent_metric(spec.y):
         fig.update_yaxes(tickformat=".1%")
     return fig

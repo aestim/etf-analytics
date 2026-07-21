@@ -23,11 +23,16 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 
 Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
 
-1. **Scope routing + Text-to-SQL** ✅ — normally one Gemini structured-output call returns `data_query` + SQL or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`), and full-universe relationship questions are supported without naming a ticker — see [`qa/ask.py`](qa/ask.py)
+1. **Scope routing + Text-to-SQL** ✅ — normally one Gemini structured-output call returns `data_query` + SQL or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`); explicit historical windows up to 10 years override the 1-year default, and cross-ETF relationships work without naming a ticker — see [`qa/ask.py`](qa/ask.py)
 2. **Safety** ✅ — generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables with columns that resolve against the documented mart schema, then executed as `etf_reader` with a row limit and timeout. A documented-column mismatch gets one bounded correction call and the corrected SQL must pass the full guard again. Predictions, investment advice, causal claims and backtests are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
 3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 
 Design principle: **the LLM emits structured JSON only — generated code is never executed, and chart selection requires no extra model call.**
+
+For generic cross-ETF relationships, Ask defaults to unleveraged funds so 2x/3x
+products do not dominate the result. Say “include leveraged ETFs” to override it.
+Plain volume comparisons use log-scaled average daily dollar volume, and
+multi-year performance uses CAGR.
 
 Testing layers, CI boundaries, and local commands are documented in [`docs/testing.md`](docs/testing.md).
 

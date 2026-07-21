@@ -77,6 +77,61 @@ DEFAULT_RETURN_LOOKBACK = "1 year"
 MIN_DEFAULT_RETURN_OBSERVATIONS = 200
 DEFAULT_RELATIONSHIP_LOOKBACK = "1 year"
 MIN_RELATIONSHIP_OBSERVATIONS = 200
+MAX_HISTORICAL_LOOKBACK_YEARS = 10
+MIN_OBSERVATIONS_PER_YEAR = 200
+
+_ENGLISH_HISTORICAL_YEARS = re.compile(
+    r"\b(?:over\s+(?:the\s+)?past|past|last)\s+(\d+)\s+years?\b",
+    re.IGNORECASE,
+)
+_KOREAN_HISTORICAL_YEARS = re.compile(r"(?:지난|최근)\s*(\d+)\s*년")
+_ENGLISH_METRIC_YEARS = re.compile(
+    r"\b(\d+)[ -]years?\s+(?:cagr|return|performance|volatility|history|lookback)\b",
+    re.IGNORECASE,
+)
+_KOREAN_METRIC_YEARS = re.compile(
+    r"(\d+)\s*년(?:간)?\s*(?:cagr|수익|성과|변동성|데이터)",
+    re.IGNORECASE,
+)
+_ENGLISH_IN_YEARS = re.compile(r"\bin\s+(\d+)\s+years?\b", re.IGNORECASE)
+_FUTURE_CUES = re.compile(
+    r"\b(?:will|future|forecast|predict|prediction|from now)\b|(?:앞으로|미래|\d+\s*년\s*후)",
+    re.IGNORECASE,
+)
+
+
+def historical_lookback_years(question: str) -> int | None:
+    """Return an explicitly historical N-year lookback, not a future horizon."""
+    if _FUTURE_CUES.search(question):
+        return None
+    for pattern in (
+        _ENGLISH_HISTORICAL_YEARS,
+        _KOREAN_HISTORICAL_YEARS,
+        _ENGLISH_METRIC_YEARS,
+        _KOREAN_METRIC_YEARS,
+    ):
+        if match := pattern.search(question):
+            return int(match.group(1))
+    # Users often write "in 10 years" to mean "using a 10-year window" in an
+    # analytics UI. Treat it as historical unless explicit forecast language
+    # makes the future meaning clear.
+    if match := _ENGLISH_IN_YEARS.search(question):
+        return int(match.group(1))
+    return None
+
+
+def _question_with_period_context(question: str) -> str:
+    years = historical_lookback_years(question)
+    if years is None:
+        return question
+    minimum = years * MIN_OBSERVATIONS_PER_YEAR
+    return (
+        f"{question}\n\n"
+        "Parsed request context (follow this exactly): the user explicitly requested "
+        f"a trailing historical {years}-year window, not a future prediction. This "
+        f"overrides the default lookback. Require at least {minimum} paired trading-day "
+        "observations per ticker for a full-period comparison."
+    )
 
 
 # Few-shot "question → correct SQL" pairs. Their job is to teach style
@@ -146,6 +201,8 @@ SQL: WITH per_etf AS (
          HAVING COUNT(r.annualized_vol_30d) >= {MIN_RELATIONSHIP_OBSERVATIONS}
      )
      SELECT *,
+            'the current ETF warehouse universe including leveraged funds'
+                AS universe_scope,
             CORR(leverage, avg_annualized_vol_30d) OVER () AS correlation
      FROM per_etf
      ORDER BY leverage, ticker
@@ -155,7 +212,7 @@ Q: 거래량과 변동성 사이에 관계가 있나?
 Intent: data_query
 SQL: WITH per_etf AS (
          SELECT p.ticker,
-                AVG(p.volume)::double precision AS avg_daily_volume,
+                AVG(p.volume * p.adj_close)::double precision AS avg_daily_dollar_volume,
                 AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
                 MIN(p.price_date) AS period_start,
                 MAX(p.price_date) AS as_of_date,
@@ -163,16 +220,21 @@ SQL: WITH per_etf AS (
          FROM public_marts.mart_etf_returns AS p
          JOIN public_marts.mart_etf_risk_metrics AS r
            ON p.ticker = r.ticker AND p.price_date = r.price_date
+         JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
          WHERE p.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+           AND d.leverage = 1
            AND p.volume IS NOT NULL
+           AND p.adj_close IS NOT NULL
            AND r.annualized_vol_30d IS NOT NULL
          GROUP BY p.ticker
          HAVING COUNT(r.annualized_vol_30d) >= {MIN_RELATIONSHIP_OBSERVATIONS}
      )
      SELECT *,
-            CORR(avg_daily_volume, avg_annualized_vol_30d) OVER () AS correlation
+            'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
+            CORR(LN(NULLIF(avg_daily_dollar_volume, 0)),
+                 avg_annualized_vol_30d) OVER () AS correlation
      FROM per_etf
-     ORDER BY avg_daily_volume, ticker
+     ORDER BY avg_daily_dollar_volume, ticker
 
 Example 7
 Q: How do return performance and volatility move together across ETFs?
@@ -187,18 +249,81 @@ SQL: WITH per_etf AS (
          FROM public_marts.mart_etf_returns AS r
          JOIN public_marts.mart_etf_risk_metrics AS m
            ON r.ticker = m.ticker AND r.price_date = m.price_date
+         JOIN public_marts.dim_etf AS d ON r.ticker = d.ticker
          WHERE r.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+           AND d.leverage = 1
            AND r.daily_return IS NOT NULL
            AND m.annualized_vol_30d IS NOT NULL
          GROUP BY r.ticker
          HAVING COUNT(r.daily_return) >= {MIN_RELATIONSHIP_OBSERVATIONS}
      )
      SELECT *,
+            'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
             CORR(cumulative_return, avg_annualized_vol_30d) OVER () AS correlation
      FROM per_etf
      ORDER BY cumulative_return DESC
 
 Example 8
+Q: Over the past 10 years, have ETFs with higher average trading volume
+   generally had higher annualized volatility?
+Intent: data_query
+SQL: WITH per_etf AS (
+         SELECT p.ticker,
+                AVG(p.volume * p.adj_close)::double precision AS avg_daily_dollar_volume,
+                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
+                MIN(p.price_date) AS period_start,
+                MAX(p.price_date) AS as_of_date,
+                COUNT(r.annualized_vol_30d) AS observations
+         FROM public_marts.mart_etf_returns AS p
+         JOIN public_marts.mart_etf_risk_metrics AS r
+           ON p.ticker = r.ticker AND p.price_date = r.price_date
+         JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
+         WHERE p.price_date >= CURRENT_DATE - INTERVAL '10 years'
+           AND d.leverage = 1
+           AND p.volume IS NOT NULL
+           AND p.adj_close IS NOT NULL
+           AND r.annualized_vol_30d IS NOT NULL
+         GROUP BY p.ticker
+         HAVING COUNT(r.annualized_vol_30d) >= 2000
+     )
+     SELECT *,
+            'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
+            CORR(LN(NULLIF(avg_daily_dollar_volume, 0)),
+                 avg_annualized_vol_30d) OVER () AS correlation
+     FROM per_etf
+     ORDER BY avg_daily_dollar_volume, ticker
+
+Example 9
+Q: Among unleveraged ETFs, what is the relationship between 10-year CAGR
+   and annualized volatility?
+Intent: data_query
+SQL: WITH per_etf AS (
+         SELECT p.ticker,
+                POWER(EXP(SUM(LN(1 + p.daily_return))),
+                      365.25 / NULLIF(MAX(p.price_date) - MIN(p.price_date), 0)) - 1
+                    AS cagr,
+                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
+                MIN(p.price_date) AS period_start,
+                MAX(p.price_date) AS as_of_date,
+                COUNT(p.daily_return) AS observations
+         FROM public_marts.mart_etf_returns AS p
+         JOIN public_marts.mart_etf_risk_metrics AS r
+           ON p.ticker = r.ticker AND p.price_date = r.price_date
+         JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
+         WHERE p.price_date >= CURRENT_DATE - INTERVAL '10 years'
+           AND d.leverage = 1
+           AND p.daily_return IS NOT NULL
+           AND r.annualized_vol_30d IS NOT NULL
+         GROUP BY p.ticker
+         HAVING COUNT(p.daily_return) >= 2000
+     )
+     SELECT *,
+            'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
+            CORR(cagr, avg_annualized_vol_30d) OVER () AS correlation
+     FROM per_etf
+     ORDER BY cagr DESC, ticker
+
+Example 10
 Q: TQQQ 지금 사도 돼?
 Intent: out_of_scope
 SQL: ""
@@ -212,7 +337,7 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
 - intent="data_query" for descriptive lookups, aggregations, rankings,
   comparisons, time series, and relationship/correlation analysis over the
   documented warehouse. A ticker does NOT need to be named: analysis across
-  the full ETF universe is supported and is not "theoretical".
+  the ETF universe is supported and is not "theoretical".
 - intent="out_of_scope" only for predictions, investment advice, causal or
   "why" claims, path-dependent simulations/backtests, or fields absent from
   the documented schema. For a refusal, set sql="" and give the exact reason.
@@ -223,6 +348,16 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
 - In a join, qualify every source column with the alias of the table that
   actually owns that column. Never copy a metric onto another table alias.
 - Relative dates from CURRENT_DATE (e.g. INTERVAL '1 year', DATE_TRUNC('year', ...)).
+- The documented marts contain up to {MAX_HISTORICAL_LOOKBACK_YEARS} years of
+  history. An explicit historical period such as "over the past 10 years",
+  "last 5 years", or "지난 10년" overrides every 1-year default and is in scope.
+  Never claim that the dataset only supports one year. For an explicit N-year
+  comparison, require at least N × {MIN_OBSERVATIONS_PER_YEAR} paired observations
+  per ticker (for example, 2,000 for 10 years).
+- In this analytics UI, an otherwise descriptive "in N years" means a trailing
+  historical N-year window. If the question adds an explicit future cue such as
+  "will", "from now", "future", "앞으로", or "N년 후", it is a prediction and
+  must be refused for that reason. Never claim the warehouse has only one year.
 - Map plain-language groups (e.g. "미국 장기채", "leveraged") to dim_etf
   asset_class / sub_class values from the universe list.
 - Return at most {MAX_ROWS} rows; prefer ORDER BY that makes the table readable.
@@ -236,14 +371,34 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   incomplete history are not ranked against full-period observations.
 - rolling_vol_30d is DAILY volatility; use annualized_vol_30d when the question
   asks for "annual" / "연" volatility (they are the same series × sqrt(252)).
+- For liquidity comparisons across ETFs, plain "volume" / "거래량" means daily
+  dollar volume (`volume * adj_close`), not share count, because ETF share prices
+  differ. Return `AVG(volume * adj_close)::double precision AS
+  avg_daily_dollar_volume`. Use `LN(NULLIF(avg_daily_dollar_volume, 0))` inside
+  CORR to reduce scale skew while returning the raw dollar value for display.
+  Only use share volume when the user explicitly asks for shares/contracts.
+- For performance windows of 2 years or longer, or when the user asks for an
+  annualized long-term return, use CAGR rather than raw cumulative return:
+  `POWER(EXP(SUM(LN(1 + daily_return))),
+   365.25 / NULLIF(MAX(price_date) - MIN(price_date), 0)) - 1 AS cagr`.
+  Keep cumulative_return for sub-2-year windows or when explicitly requested.
 - If a relationship/correlation question omits a period, use the trailing
   {DEFAULT_RELATIONSHIP_LOOKBACK}. Build one comparable row per ticker with
   both requested numeric measures, period_start, as_of_date and observations;
   require at least {MIN_RELATIONSHIP_OBSERVATIONS} paired observations.
   Include the Pearson coefficient as `correlation` using CORR(...) OVER () so
   the same result supports a scatter plot and an exact numeric answer.
-- Relationship questions over all ETFs are descriptive data queries. Do not
-  reject them merely because no specific ticker is named.
+- For a generic cross-ETF relationship, join dim_etf and default to
+  `leverage = 1` so QLD/TQQQ do not dominate an ordinary return-risk or
+  liquidity-risk relationship. Do not apply that filter when leverage itself
+  is a requested metric, when the user asks specifically about leveraged ETFs,
+  or when the user explicitly says to include leveraged funds/all ETFs.
+- Every relationship result must return a string `universe_scope` column:
+  `the current unleveraged ETF subset (leverage = 1)` for the default filter,
+  or `the current ETF warehouse universe including leveraged funds` when all
+  leverage levels are intentionally included. This scope is part of the answer.
+- Cross-ETF relationship questions are descriptive data queries. Do not reject
+  them merely because no specific ticker is named.
 - Write `explanation` in English regardless of the question's language
   (the UI is English-only). State the applied period explicitly.
 
@@ -413,7 +568,11 @@ def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry
 
 
 def generate_sql(question: str) -> SqlAnswer:
-    return _structured_call(SQL_SYSTEM_PROMPT, question, SqlAnswer)
+    return _structured_call(
+        SQL_SYSTEM_PROMPT,
+        _question_with_period_context(question),
+        SqlAnswer,
+    )
 
 
 def repair_sql(question: str, failed_sql: str, validation_error: str) -> SqlAnswer:
@@ -584,8 +743,8 @@ def answer(question: str) -> AskResult:
                 )
             raise
         explanation = generated.explanation
-        if summary := correlation_summary(df):
-            explanation = f"{explanation}\n\n{summary}"
+        if summary := correlation_summary(df, question):
+            explanation = summary
         return AskResult(
             question, "answered",
             sql=generated.sql, safe_sql=safe_sql,

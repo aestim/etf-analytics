@@ -190,5 +190,7 @@ def test_answer_adds_executed_correlation_summary(monkeypatch):
 
     result = ask.answer("레버리지와 변동성의 상관관계는?")
 
+    assert "Uses the trailing one-year period" not in result.explanation
     assert "Pearson correlation: 0.72" in result.explanation
+    assert "current 2-ETF warehouse universe" in result.explanation
     assert "does not establish causation" in result.explanation

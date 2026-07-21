@@ -69,17 +69,25 @@ _METADATA_NUMERIC_COLUMNS = {
 
 _METRIC_HINTS = (
     (("레버리지", "leverage"), ("leverage",)),
-    (("거래량", "volume"), ("avg_daily_volume", "volume")),
-    (("수익", "return"), ("cumulative_return", "ytd_return", "daily_return", "return")),
+    (
+        ("거래대금", "거래량", "dollar volume", "volume", "liquidity"),
+        ("avg_daily_dollar_volume", "avg_daily_volume", "volume"),
+    ),
+    (
+        ("cagr", "수익", "return", "performance"),
+        ("cagr", "cumulative_return", "ytd_return", "daily_return", "return"),
+    ),
     (("변동", "volatility", "volatile"), ("annualized_vol_30d", "rolling_vol_30d", "volatility")),
     (("낙폭", "drawdown"), ("drawdown",)),
     (("가격", "price"), ("adj_close", "close", "price")),
 )
 
 _METRIC_PRIORITY = (
+    "cagr",
     "cumulative_return",
     "ytd_return",
     "leverage",
+    "avg_daily_dollar_volume",
     "avg_daily_volume",
     "annualized_vol_30d",
     "rolling_vol_30d",
@@ -115,7 +123,8 @@ def _has_correlation_result(df: pd.DataFrame) -> bool:
     return any(str(column).lower() == "correlation" for column in df.columns)
 
 
-def _numeric_columns(question: str, df: pd.DataFrame) -> list[str]:
+def metric_columns(question: str, df: pd.DataFrame) -> list[str]:
+    """Return drawable numeric metrics ordered by their mention in the question."""
     candidates = [
         column
         for column in df.columns
@@ -146,6 +155,14 @@ def _numeric_columns(question: str, df: pd.DataFrame) -> list[str]:
         )
     ordered.extend(column for column in candidates if column not in ordered)
     return ordered
+
+
+def relationship_axes(question: str, df: pd.DataFrame) -> tuple[str, str] | None:
+    """Return the two relationship metrics, excluding counts and coefficients."""
+    numeric = metric_columns(question, df)
+    if len(numeric) < 2:
+        return None
+    return str(numeric[0]), str(numeric[1])
 
 
 def _date_columns(df: pd.DataFrame) -> list[str]:
@@ -206,7 +223,7 @@ def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
     if df is None or len(df) < 2:
         return ChartSpec(chart_type="table", title="Result")
 
-    numeric = _numeric_columns(question, df)
+    numeric = metric_columns(question, df)
     if not numeric:
         return ChartSpec(chart_type="table", title="Result")
 

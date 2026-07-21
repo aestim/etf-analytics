@@ -90,6 +90,12 @@ flowchart LR
   class X exec;
 ```
 
+Relationship results carry an explicit `universe_scope` contract. Generic
+cross-ETF relationships default to `leverage = 1`; leverage is included when it
+is the requested metric or the user explicitly asks for it. Plain volume means
+log-scaled average daily dollar volume, explicit historical windows override the
+1-year default, and performance windows of 2 years or longer use CAGR.
+
 Defence in depth: even if the gate and the sqlglot allowlist were both bypassed,
 execution runs as `etf_reader` (SELECT-only on `public_marts`), so writes and
 non-whitelisted tables are impossible at the database level. Generated SQL is

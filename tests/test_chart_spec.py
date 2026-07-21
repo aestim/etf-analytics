@@ -76,6 +76,30 @@ def test_return_chart_uses_percentage_axis():
     assert fig.layout.yaxis.tickformat == ".1%"
 
 
+def test_dollar_volume_scatter_uses_log_usd_axis():
+    relationship = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "IWM"],
+            "avg_daily_dollar_volume": [1e8, 2e8, 5e7],
+            "avg_annualized_vol_30d": [0.12, 0.18, 0.2],
+            "correlation": [0.4, 0.4, 0.4],
+        }
+    )
+    spec = auto_chart_spec(
+        "Does dollar volume move with volatility?",
+        relationship,
+    )
+    fig = render(spec, relationship)
+
+    assert (spec.x, spec.y) == (
+        "avg_daily_dollar_volume",
+        "avg_annualized_vol_30d",
+    )
+    assert fig.layout.xaxis.type == "log"
+    assert fig.layout.xaxis.tickprefix == "$"
+    assert "log scale" in fig.layout.xaxis.title.text
+
+
 # --- deterministic auto selection -----------------------------------------
 
 

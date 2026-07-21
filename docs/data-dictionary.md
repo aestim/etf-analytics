@@ -85,6 +85,18 @@ Rolling risk statistics (window = 30 trading days unless changed in dbt).
 | Max drawdown | \(\min(drawdown)\) over range |
 | Latest 30d vol | Last non-null `rolling_vol_30d` |
 
+## Ask relationship metrics (derived in SQL)
+
+| Metric | Definition / policy |
+|--------|---------------------|
+| `avg_daily_dollar_volume` | `AVG(volume × adj_close)` in USD; used instead of share count for cross-ETF liquidity comparisons |
+| Dollar-volume relationship | Pearson correlation uses `LN(avg_daily_dollar_volume)` and the scatter x-axis is logarithmic because liquidity is highly skewed |
+| `cagr` | `total_growth^(365.25 / calendar_days) - 1`; used for performance windows of 2 years or longer |
+| Relationship period | Explicit historical period up to 10 years wins; omitted period defaults to trailing 1 year |
+| Comparable history | At least 200 paired trading observations per requested year |
+| Default universe | `leverage = 1`; include 2x/3x only when leverage is the metric or the question explicitly requests them |
+| `correlation` | Cross-sectional Pearson coefficient over one aggregated row per ticker; descriptive for the curated warehouse universe, not a population claim |
+
 ---
 
 ## Source mapping (Yahoo → raw)
