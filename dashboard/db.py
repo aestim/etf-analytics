@@ -13,9 +13,10 @@ import os
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
+
+from chart_colors import ticker_color_map
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
@@ -45,17 +46,6 @@ def glossary_expander(keys, title: str = "📖 Metrics guide") -> None:
     with st.expander(title):
         for k in keys:
             st.markdown(f"**{k}** — {GLOSSARY[k]}")
-
-
-def ticker_color_map(tickers) -> dict[str, str]:
-    """Stable, distinct color per ticker.
-
-    Plotly's default qualitative palette has only 10 colors, so with more
-    than 10 tickers lines start sharing colors. Dark24 gives 24 distinct
-    colors, and sorting makes the mapping consistent across charts.
-    """
-    palette = px.colors.qualitative.Dark24
-    return {t: palette[i % len(palette)] for i, t in enumerate(sorted(tickers))}
 
 
 # --------------------------------------------------------------------------
