@@ -16,6 +16,7 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     # Optional cloud warehouse (e.g. Neon/Supabase free Postgres).
     # Set the POSTGRES_* repo secrets to enable; leave unset for parquet-only.
@@ -37,6 +38,10 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            ingest/requirements.txt
+            airflow/requirements.txt
 
       - name: Install dependencies
         run: pip install -r ingest/requirements.txt
@@ -51,13 +56,11 @@ jobs:
       - name: dbt build against cloud warehouse
         if: env.POSTGRES_HOST != ''
         run: |
-          pip install "dbt-core>=1.7,<2" "dbt-postgres>=1.7,<2"
+          pip install -r airflow/requirements.txt
           cd dbt
           cp profiles.yml.example profiles.yml  # profiles.yml is gitignored; env-driven anyway
           dbt deps
-          dbt seed --profiles-dir .
-          dbt run --profiles-dir .
-          dbt test --profiles-dir .
+          dbt build --profiles-dir .
 
       - name: Commit and push raw data
         run: |

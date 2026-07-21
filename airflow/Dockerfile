@@ -10,5 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 USER airflow
 
 COPY ingest/requirements.txt /tmp/ingest-requirements.txt
+COPY airflow/requirements.txt /tmp/airflow-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/ingest-requirements.txt \
-    && pip install --no-cache-dir "dbt-core>=1.7,<2" "dbt-postgres>=1.7,<2"
+    -r /tmp/airflow-requirements.txt

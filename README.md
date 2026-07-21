@@ -12,7 +12,7 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 
 - **Ingest** — yfinance daily prices (10-year window, one batched request for the whole universe), parquet landing zone + idempotent Postgres upsert; universe is env-driven (`ETF_TICKERS`)
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
-- **Data quality** — 20+ dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
+- **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that commits parquet snapshots
 - **Dashboard** — Streamlit multipage: price/return/volatility charts with a stable 24-color palette, an interactive ticker guide, and metric tooltips backed by a shared glossary
 - **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) backtested by pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
@@ -28,6 +28,8 @@ Plain-language questions ("Which long-duration Treasury ETF had the lowest volat
 3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (explicit relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 
 Design principle: **the LLM emits structured JSON only — generated code is never executed, and chart selection requires no extra model call.**
+
+Testing layers, CI boundaries, and local commands are documented in [`docs/testing.md`](docs/testing.md).
 
 ## Repository layout
 

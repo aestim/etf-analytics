@@ -4,40 +4,56 @@ name: tests
 on:
   push:
     branches: [main]
+    # The scheduled ingest only updates snapshots; code/dbt are unchanged.
+    paths-ignore:
+      - 'data/raw/**'
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            ingest/requirements.txt
+            dashboard/requirements.txt
 
-      - name: Install deps (analytics + qa, offline tests only)
-        run: |
-          pip install -r requirements-dev.txt -r ingest/requirements.txt
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
 
       - name: Lint — real errors only (undefined names, syntax)
-        run: |
-          pip install ruff
-          ruff check --select E9,F63,F7,F82 .
+        run: ruff check --select E9,F63,F7,F82 .
 
       - name: Run pytest
         run: pytest tests -q
 
   dbt_parse:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: airflow/requirements.txt
 
       - name: Install dbt
-        run: pip install "dbt-core>=1.7,<2" "dbt-postgres>=1.7,<2"
+        run: pip install -r airflow/requirements.txt
 
       - name: dbt deps + parse (compiles models/tests, no DB connection)
         working-directory: dbt

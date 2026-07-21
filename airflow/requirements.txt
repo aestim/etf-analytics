@@ -1,4 +1,3 @@
-# Installed into the custom Airflow image (ingest + dbt)
--r ../ingest/requirements.txt
+# dbt dependencies shared by the Airflow image and GitHub Actions.
 dbt-core>=1.7,<2
 dbt-postgres>=1.7,<2
