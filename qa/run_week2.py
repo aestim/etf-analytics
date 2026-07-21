@@ -11,7 +11,8 @@ immediately; 503 capacity errors retry briefly and then fail over. (Change the c
 GEMINI_MODEL_CHAIN=..., force one model with GEMINI_MODEL=...) The "model"
 field in the jsonl records which model answered each question.
 
-Quota strategy (1 API call per question = scope routing + SQL generation):
+Quota strategy (normally 1 API call per question; at most 2 when a documented
+column mismatch needs one SQL correction):
   - default 15s between questions → ~4 calls/min
   - per-call 429/503 recovery lives in ask.py's _with_backoff (honours retryDelay)
   - on full daily-quota exhaustion: stop immediately and print the resume command
@@ -38,7 +39,7 @@ HERE = Path(__file__).resolve().parent
 RESULTS_MD = HERE / "week2_results.md"
 LOG_DIR = HERE / "logs"
 
-DEFAULT_SLEEP = 15  # seconds between questions — ~8 calls/min at 2 calls/question
+DEFAULT_SLEEP = 15  # seconds between questions — ~4 calls/min in the repair worst case
 
 # (question, expected) — "data" = should return a table, "refuse" = should be refused.
 # Half the questions are deliberately Korean: the pipeline accepts both languages.

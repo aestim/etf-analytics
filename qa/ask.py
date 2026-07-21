@@ -3,8 +3,9 @@ Week 2 (3/3): question → table. Assembles the whole pipeline.
 
     python qa/ask.py "How volatile was TLT over the past year?"
 
-Flow:  scope routing + SQL generation (one structured-output call)
-       → guard (sql_guard) → execute as etf_reader (timeout) → DataFrame
+Flow:  scope routing + SQL generation (normally one structured-output call)
+       → guard (one bounded correction only for documented-column mismatch)
+       → execute as etf_reader (timeout) → DataFrame
 
 Core principle: the LLM only fills in forms (JSON). Execution is done
 exclusively by this code, after validation.
@@ -15,7 +16,6 @@ from __future__ import annotations
 import os
 import random
 import re
-import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from gemini_runtime import new_client
 from presentation import correlation_summary
 from schema_prompt import SCHEMA_NAME, build_schema_prompt
-from sql_guard import MAX_ROWS, GuardError, validate
+from sql_guard import MAX_ROWS, GuardError, SchemaGuardError, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
@@ -175,6 +175,30 @@ SQL: WITH per_etf AS (
      ORDER BY avg_daily_volume, ticker
 
 Example 7
+Q: How do return performance and volatility move together across ETFs?
+Intent: data_query
+SQL: WITH per_etf AS (
+         SELECT r.ticker,
+                EXP(SUM(LN(1 + r.daily_return))) - 1 AS cumulative_return,
+                AVG(m.annualized_vol_30d) AS avg_annualized_vol_30d,
+                MIN(r.price_date) AS period_start,
+                MAX(r.price_date) AS as_of_date,
+                COUNT(r.daily_return) AS observations
+         FROM public_marts.mart_etf_returns AS r
+         JOIN public_marts.mart_etf_risk_metrics AS m
+           ON r.ticker = m.ticker AND r.price_date = m.price_date
+         WHERE r.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+           AND r.daily_return IS NOT NULL
+           AND m.annualized_vol_30d IS NOT NULL
+         GROUP BY r.ticker
+         HAVING COUNT(r.daily_return) >= {MIN_RELATIONSHIP_OBSERVATIONS}
+     )
+     SELECT *,
+            CORR(cumulative_return, avg_annualized_vol_30d) OVER () AS correlation
+     FROM per_etf
+     ORDER BY cumulative_return DESC
+
+Example 8
 Q: TQQQ 지금 사도 돼?
 Intent: out_of_scope
 SQL: ""
@@ -196,6 +220,8 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   allowed). No semicolons, comments, DDL, or writes.
 
 - Always use fully qualified table names ({SCHEMA_NAME}.table_name).
+- In a join, qualify every source column with the alias of the table that
+  actually owns that column. Never copy a metric onto another table alias.
 - Relative dates from CURRENT_DATE (e.g. INTERVAL '1 year', DATE_TRUNC('year', ...)).
 - Map plain-language groups (e.g. "미국 장기채", "leveraged") to dim_etf
   asset_class / sub_class values from the universe list.
@@ -227,6 +253,17 @@ Database schema:
 {FEW_SHOTS}
 """
 
+SQL_REPAIR_SYSTEM_PROMPT = f"""
+{SQL_SYSTEM_PROMPT}
+
+Correction task: the first SQL attempt was read-only but failed documented
+column validation. Return intent="data_query" and a corrected SQL statement
+for the original question. Fix table aliases or column references using only
+the documented schema. Do not broaden the question, invent columns, or reuse
+the rejected reference. The corrected SQL will pass through the full safety
+guard again before execution.
+"""
+
 
 RATE_LIMIT_WAITS = (2, 5)  # keep interactive requests bounded before model failover
 RATE_LIMIT_MAX_SERVER_WAIT = 5.0
@@ -242,6 +279,10 @@ class DailyQuotaError(RuntimeError):
 
 class ProviderUnavailableError(RuntimeError):
     """Every configured model stayed unavailable after bounded retries."""
+
+
+class WarehouseSchemaError(RuntimeError):
+    """The deployed database marts lag behind the application schema."""
 
 
 def _sleep_with_jitter(base_delay: float) -> float:
@@ -375,6 +416,15 @@ def generate_sql(question: str) -> SqlAnswer:
     return _structured_call(SQL_SYSTEM_PROMPT, question, SqlAnswer)
 
 
+def repair_sql(question: str, failed_sql: str, validation_error: str) -> SqlAnswer:
+    contents = (
+        f"Original question:\n{question}\n\n"
+        f"Rejected SQL:\n{failed_sql}\n\n"
+        f"Validator feedback:\n{validation_error}"
+    )
+    return _structured_call(SQL_REPAIR_SYSTEM_PROMPT, contents, SqlAnswer)
+
+
 def sslmode_for(host: str) -> str:
     """Managed Postgres (Neon/Supabase) requires SSL; local Docker has none.
     Default to 'require' unless the host is local — override with POSTGRES_SSLMODE."""
@@ -435,6 +485,16 @@ def run_readonly(sql: str) -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
+def _postgres_error_code(exc: Exception) -> str:
+    """Extract a PostgreSQL SQLSTATE from SQLAlchemy/psycopg wrappers."""
+    for candidate in (exc, getattr(exc, "orig", None), getattr(exc, "__cause__", None)):
+        if candidate is None:
+            continue
+        if code := getattr(candidate, "pgcode", None) or getattr(candidate, "sqlstate", None):
+            return str(code)
+    return ""
+
+
 @dataclass
 class AskResult:
     """Structured result of one pipeline run — shared by the CLI, UI and test runner."""
@@ -476,11 +536,53 @@ def answer(question: str) -> AskResult:
             )
         try:
             safe_sql = validate(generated.sql)
+        except SchemaGuardError as first_error:
+            repaired = _with_backoff(
+                repair_sql,
+                question,
+                generated.sql,
+                str(first_error),
+            )
+            if repaired.intent != "data_query":
+                return AskResult(
+                    question,
+                    "refused_guard",
+                    reason="Generated SQL could not be matched to the documented columns.",
+                    sql=generated.sql,
+                    model=current_model(),
+                )
+            generated = repaired
+            try:
+                safe_sql = validate(generated.sql)
+            except GuardError as second_error:
+                return AskResult(
+                    question,
+                    "refused_guard",
+                    reason=f"Corrected SQL still failed validation: {second_error}",
+                    sql=generated.sql,
+                    model=current_model(),
+                )
         except GuardError as e:
             return AskResult(question, "refused_guard", reason=str(e), sql=generated.sql,
                              model=current_model())
 
-        df = run_readonly(safe_sql)
+        try:
+            df = run_readonly(safe_sql)
+        except Exception as e:  # noqa: BLE001 — distinguish deploy drift from query failures
+            if _postgres_error_code(e) in {"42703", "42P01"}:
+                return AskResult(
+                    question,
+                    "error",
+                    reason=(
+                        "The warehouse schema is behind the deployed app. "
+                        "Rebuild the cloud dbt marts, then retry the question."
+                    ),
+                    sql=generated.sql,
+                    safe_sql=safe_sql,
+                    model=current_model(),
+                    error_kind="warehouse_schema",
+                )
+            raise
         explanation = generated.explanation
         if summary := correlation_summary(df):
             explanation = f"{explanation}\n\n{summary}"

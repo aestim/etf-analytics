@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 21 * * 1-5'  # Weekdays 21:00 UTC (after US market close)
   workflow_dispatch:
+    inputs:
+      dbt_only:
+        description: Rebuild cloud marts from existing raw data without fetching prices
+        required: false
+        default: false
+        type: boolean
 
 # Required for git push from Actions (Settings → Actions → Workflow permissions → Read and write)
 permissions:
@@ -44,9 +50,11 @@ jobs:
             airflow/requirements.txt
 
       - name: Install dependencies
+        if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
         run: pip install -r ingest/requirements.txt
 
       - name: Fetch prices (writes parquet; upserts warehouse when secrets are set)
+        if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
         run: python ingest/fetch_prices.py
         env:
           RAW_DATA_DIR: data/raw
@@ -63,6 +71,7 @@ jobs:
           dbt build --profiles-dir .
 
       - name: Commit and push raw data
+        if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

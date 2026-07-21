@@ -1,6 +1,6 @@
 """qa/schema_prompt.py — the prompt is fully generated from the dbt docs."""
 
-from schema_prompt import ALLOWED_TABLES, build_schema_prompt
+from schema_prompt import ALLOWED_TABLES, build_schema_prompt, build_sqlglot_schema
 
 
 def test_prompt_contains_all_allowed_tables():
@@ -21,3 +21,12 @@ def test_prompt_contains_universe_with_new_tickers():
     for ticker in ("SCHD", "VWO", "IWM", "TLT"):
         assert ticker in prompt
     assert "treasury_long" in prompt  # lets "long-term treasuries" map to sub_class
+
+
+def test_sqlglot_schema_comes_from_the_same_documented_columns():
+    schema = build_sqlglot_schema()["public_marts"]
+
+    assert set(schema) == set(ALLOWED_TABLES)
+    assert "daily_return" in schema["mart_etf_returns"]
+    assert "annualized_vol_30d" not in schema["mart_etf_returns"]
+    assert "annualized_vol_30d" in schema["mart_etf_risk_metrics"]

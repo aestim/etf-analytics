@@ -26,6 +26,10 @@ SCHEMA_NAME = "public_marts"
 ALLOWED_TABLES = ("dim_etf", "mart_etf_returns", "mart_etf_risk_metrics")
 
 
+def _documented_models() -> list[dict]:
+    return yaml.safe_load(MARTS_SCHEMA_YML.read_text(encoding="utf-8"))["models"]
+
+
 def _model_section(model: dict) -> str:
     lines = [f"Table: {SCHEMA_NAME}.{model['name']} — {model.get('description', '').strip()}"]
     for col in model.get("columns", []):
@@ -45,10 +49,22 @@ def _universe_section() -> str:
 
 
 def build_schema_prompt() -> str:
-    models = yaml.safe_load(MARTS_SCHEMA_YML.read_text(encoding="utf-8"))["models"]
+    models = _documented_models()
     sections = [_model_section(m) for m in models if m["name"] in ALLOWED_TABLES]
     sections.append(_universe_section())
     return "\n\n".join(sections)
+
+
+def build_sqlglot_schema() -> dict[str, dict[str, dict[str, str]]]:
+    """Return documented mart columns in sqlglot's schema-mapping format."""
+    tables = {
+        model["name"]: {
+            column["name"]: "UNKNOWN" for column in model.get("columns", [])
+        }
+        for model in _documented_models()
+        if model["name"] in ALLOWED_TABLES
+    }
+    return {SCHEMA_NAME: tables}
 
 
 if __name__ == "__main__":

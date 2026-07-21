@@ -5,9 +5,10 @@ Run:   python qa/practice_structured.py
 Pass:  all questions parse into the pydantic schema, and the advice/backtest
        ones are classified out_of_scope.
 
-This remains a standalone learning exercise. Production ask.py now combines
-scope routing and SQL generation in one structured-output call to avoid a
-second API request and contradictory routing decisions.
+This remains a standalone learning exercise. Production ask.py combines scope
+routing and SQL generation in one normal structured-output call to avoid a
+separate intent request and contradictory routing decisions. Only a documented
+column mismatch can add one bounded SQL-correction call.
 """
 
 import os

@@ -83,6 +83,78 @@ def test_answer_stops_when_sql_guard_rejects_generated_sql(monkeypatch):
     assert "only SELECT" in result.reason
 
 
+def test_answer_repairs_one_documented_column_alias_error(monkeypatch, direct_pipeline):
+    bad_sql = """
+        SELECT r.ticker, AVG(r.annualized_vol_30d) AS avg_vol
+        FROM public_marts.mart_etf_returns AS r
+        JOIN public_marts.mart_etf_risk_metrics AS m
+          ON r.ticker = m.ticker AND r.price_date = m.price_date
+        GROUP BY r.ticker
+    """
+    fixed_sql = bad_sql.replace(
+        "AVG(r.annualized_vol_30d)",
+        "AVG(m.annualized_vol_30d)",
+    )
+    monkeypatch.setattr(
+        ask,
+        "generate_sql",
+        lambda question: ask.SqlAnswer(
+            intent="data_query",
+            sql=bad_sql,
+            explanation="Initial attempt.",
+        ),
+    )
+    monkeypatch.setattr(
+        ask,
+        "repair_sql",
+        lambda question, failed_sql, error: ask.SqlAnswer(
+            intent="data_query",
+            sql=fixed_sql,
+            explanation="Uses the risk mart alias for annualized volatility.",
+        ),
+    )
+    frame = pd.DataFrame({"ticker": ["SPY"], "avg_vol": [0.16]})
+    monkeypatch.setattr(ask, "run_readonly", lambda sql: frame)
+
+    result = ask.answer("How do return performance and volatility move together?")
+
+    assert result.status == "answered"
+    assert "AVG(m.annualized_vol_30d)" in result.safe_sql
+    assert result.explanation.startswith("Uses the risk mart alias")
+    assert len(direct_pipeline) == 2
+
+
+def test_answer_hides_raw_error_when_deployed_warehouse_schema_lags(monkeypatch):
+    monkeypatch.setattr(
+        ask,
+        "generate_sql",
+        lambda question: ask.SqlAnswer(
+            intent="data_query",
+            sql="SELECT ticker, volume FROM public_marts.mart_etf_returns",
+            explanation="Average volume.",
+        ),
+    )
+
+    class UndefinedColumn(Exception):
+        pgcode = "42703"
+
+    class WrappedDatabaseError(Exception):
+        orig = UndefinedColumn("column p.volume does not exist")
+
+    monkeypatch.setattr(
+        ask,
+        "run_readonly",
+        lambda sql: (_ for _ in ()).throw(WrappedDatabaseError("raw traceback")),
+    )
+
+    result = ask.answer("Are high-volume ETFs generally more volatile?")
+
+    assert result.status == "error"
+    assert result.error_kind == "warehouse_schema"
+    assert "warehouse schema is behind" in result.reason.lower()
+    assert "raw traceback" not in result.reason
+
+
 def test_answer_converts_provider_failure_to_ui_safe_error(monkeypatch):
     def unavailable(question):
         raise ask.ProviderUnavailableError("all models unavailable")

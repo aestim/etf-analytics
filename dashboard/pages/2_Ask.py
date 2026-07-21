@@ -2,8 +2,9 @@
 Ask — chat page for natural-language questions over the marts (Week 4).
 
 The pipeline is exactly the pytest-covered parts from qa/: one structured call
-for scope routing + SQL → sqlglot guard → execution as etf_reader → deterministic
-ChartSpec → renderer. This page only wraps those parts in a chat UI.
+for scope routing + SQL → sqlglot guard (with one bounded column-reference
+correction when needed) → execution as etf_reader → deterministic ChartSpec →
+renderer. This page only wraps those parts in a chat UI.
 
 Free-tier handling: identical questions are served from cache (errors are
 never cached); 429/503 retry and model failover live in qa/ask.py's _with_backoff.
@@ -67,6 +68,7 @@ try:
     from ask import (  # noqa: E402
         DailyQuotaError,
         ProviderUnavailableError,
+        WarehouseSchemaError,
         answer,
         reader_ping,
     )
@@ -111,6 +113,8 @@ def cached_answer(question: str):
     if r.status == "error":
         if r.error_kind == "provider_unavailable":
             raise ProviderUnavailableError(r.reason)
+        if r.error_kind == "warehouse_schema":
+            raise WarehouseSchemaError(r.reason)
         raise RuntimeError(r.reason)  # st.cache_data does not store exceptions
     return r
 
@@ -203,6 +207,9 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                 ),
             }
             log_event(question, "provider_unavailable")
+        except WarehouseSchemaError as e:
+            entry = {"role": "assistant", "kind": "error", "text": str(e)}
+            log_event(question, "warehouse_schema", error=str(e))
         except Exception as e:  # noqa: BLE001
             entry = {"role": "assistant", "kind": "error", "text": f"Something went wrong: {e}"}
             log_event(question, "error", error=str(e))

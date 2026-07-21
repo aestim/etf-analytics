@@ -2,7 +2,7 @@
 
 import pytest
 
-from sql_guard import MAX_ROWS, GuardError, validate
+from sql_guard import MAX_ROWS, GuardError, SchemaGuardError, validate
 
 OK = "SELECT ticker, adj_close FROM public_marts.mart_etf_returns WHERE ticker = 'TLT'"
 
@@ -49,6 +49,19 @@ def test_cte_name_is_not_mistaken_for_table():
 
 def test_unqualified_allowed_table_passes():
     validate("SELECT ticker FROM mart_etf_returns")
+
+
+def test_wrong_join_alias_column_is_rejected_before_database_execution():
+    sql = """
+        SELECT r.ticker, AVG(r.annualized_vol_30d)
+        FROM public_marts.mart_etf_returns AS r
+        JOIN public_marts.mart_etf_risk_metrics AS m
+          ON r.ticker = m.ticker AND r.price_date = m.price_date
+        GROUP BY r.ticker
+    """
+
+    with pytest.raises(SchemaGuardError, match="column validation failed"):
+        validate(sql)
 
 
 # --- must reject ----------------------------------------------------------

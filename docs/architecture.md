@@ -70,11 +70,15 @@ never executes code**, and each stage can reject the request.
 
 ```mermaid
 flowchart LR
-  U[User question<br/>EN/KR] --> S{Scope routing + SQL<br/>one structured-output call}
+  U[User question<br/>EN/KR] --> S{Scope routing + SQL<br/>normally one structured-output call}
   S -- out_of_scope<br/>(advice · prediction · causal · backtest) --> R1[Precise refusal]
-  S -- data_query + SQL --> V{sqlglot guard<br/>single SELECT · allowlist tables · forced LIMIT}
-  V -- rejected --> R2[Refuse + show reason]
-  V -- safe SQL --> X[(Execute as etf_reader<br/>read-only · SET LOCAL statement_timeout)]
+  S -- data_query + SQL --> V1{sqlglot guard<br/>SELECT · tables · documented columns · LIMIT}
+  V1 -- unsafe --> R2[Refuse + show reason]
+  V1 -- column mismatch --> F[One bounded correction call]
+  F --> V2{Full guard again}
+  V2 -- rejected --> R2
+  V1 -- safe SQL --> X[(Execute as etf_reader<br/>read-only · SET LOCAL statement_timeout)]
+  V2 -- safe SQL --> X
   X --> C[Deterministic chart selection<br/>line · bar · scatter · table]
   C --> P{ChartSpec<br/>pydantic-validated}
   P -- invalid or table --> T[Table fallback]
@@ -82,7 +86,7 @@ flowchart LR
 
   classDef gate fill:#3b2f5e,stroke:#8a7fb8,color:#fff;
   classDef exec fill:#1f4d3a,stroke:#5fae86,color:#fff;
-  class S,V gate;
+  class S,V1,V2 gate;
   class X exec;
 ```
 

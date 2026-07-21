@@ -38,3 +38,5 @@ def test_known_relationship_questions_are_canonical_examples():
     assert "거래량과 변동성 사이에 관계가 있나?" in SQL_SYSTEM_PROMPT
     assert "avg_daily_volume" in SQL_SYSTEM_PROMPT
     assert "avg_annualized_vol_30d" in SQL_SYSTEM_PROMPT
+    assert "How do return performance and volatility move together" in SQL_SYSTEM_PROMPT
+    assert "AVG(m.annualized_vol_30d)" in SQL_SYSTEM_PROMPT

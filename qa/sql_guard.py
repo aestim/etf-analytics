@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.errors import OptimizeError
+from sqlglot.optimizer.qualify import qualify
 
-from schema_prompt import ALLOWED_TABLES, SCHEMA_NAME
+from schema_prompt import ALLOWED_TABLES, SCHEMA_NAME, build_sqlglot_schema
 
 # Ceiling to stop pathological full-table dumps, NOT a readability cap — a daily
 # multi-year time series over a few tickers is thousands of rows (3y × 2 tickers
@@ -39,6 +41,10 @@ class GuardError(ValueError):
     """Rejection reason — phrased so it can be shown to the user as-is."""
 
 
+class SchemaGuardError(GuardError):
+    """The query is read-only but references an invalid documented column."""
+
+
 def validate(sql: str) -> str:
     """Return the SQL with a guaranteed LIMIT if it passes; raise GuardError otherwise.
 
@@ -48,7 +54,8 @@ def validate(sql: str) -> str:
       3. top level is a SELECT (SELECT INTO rejected too)
       4. no write/DDL nodes anywhere in the tree (subqueries included)
       5. every referenced table is whitelisted (CTE names exempt)
-      6. LIMIT forced to MAX_ROWS when missing or larger
+      6. referenced columns resolve against the documented mart schema
+      7. LIMIT forced to MAX_ROWS when missing or larger
     """
     try:
         statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
@@ -78,6 +85,20 @@ def validate(sql: str) -> str:
             raise GuardError(
                 f"table not allowed: {shown} (allowed: {SCHEMA_NAME}.{{{', '.join(ALLOWED_TABLES)}}})"
             )
+
+    # Validate a copy: qualification expands stars and rewrites aliases, while
+    # execution should retain the generated SQL apart from the forced LIMIT.
+    try:
+        qualify(
+            tree.copy(),
+            dialect="postgres",
+            db=SCHEMA_NAME,
+            schema=build_sqlglot_schema(),
+            identify=False,
+            quote_identifiers=False,
+        )
+    except OptimizeError as e:
+        raise SchemaGuardError(f"column validation failed: {e}") from e
 
     limit = tree.args.get("limit")
     current = None

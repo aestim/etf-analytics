@@ -23,8 +23,8 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 
 Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
 
-1. **Scope routing + Text-to-SQL** ✅ — one Gemini structured-output call returns `data_query` + SQL or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`), and full-universe relationship questions are supported without naming a ticker — see [`qa/ask.py`](qa/ask.py)
-2. **Safety** ✅ — generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout. Predictions, investment advice, causal claims and backtests are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
+1. **Scope routing + Text-to-SQL** ✅ — normally one Gemini structured-output call returns `data_query` + SQL or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`), and full-universe relationship questions are supported without naming a ticker — see [`qa/ask.py`](qa/ask.py)
+2. **Safety** ✅ — generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables with columns that resolve against the documented mart schema, then executed as `etf_reader` with a row limit and timeout. A documented-column mismatch gets one bounded correction call and the corrected SQL must pass the full guard again. Predictions, investment advice, causal claims and backtests are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
 3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 
 Design principle: **the LLM emits structured JSON only — generated code is never executed, and chart selection requires no extra model call.**
@@ -123,6 +123,9 @@ Open http://localhost:8501 — dashboard on the home page, **Strategy Lab** in t
 ## GitHub Actions (daily ingest)
 
 Workflow: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices on weekdays after US close and commits parquet to `data/raw/`. If pushes fail with a 403, set **Settings → Actions → Workflow permissions → Read and write**.
+
+A manual dispatch can set `dbt_only=true` to rebuild the cloud marts from the
+existing raw warehouse without fetching or committing an intraday price snapshot.
 
 ### Optional: cloud warehouse (full mode online)
 
