@@ -151,7 +151,7 @@ def show_assistant(entry: dict, key: str) -> None:
             st.caption(entry["chart_note"])
 
 
-auto_chart = st.toggle("Auto-generate chart (one extra API call per question)", value=True)
+auto_chart = st.toggle("Auto-generate chart (one extra API call per question)", value=False)
 
 if "chat" not in st.session_state:
     st.session_state.chat = []
