@@ -139,6 +139,31 @@ def test_auto_understands_korean_comparative_relationship_question():
 
 
 @pytest.mark.parametrize(
+    "question",
+    [
+        "Do ETFs with higher returns also tend to have larger maximum drawdowns?",
+        "Do higher-return ETFs have larger maximum drawdowns?",
+    ],
+)
+def test_auto_understands_english_comparative_relationship_question(question):
+    relationship = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "cumulative_return": [0.12, 0.18, -0.02],
+            "max_drawdown": [-0.09, -0.14, -0.17],
+        }
+    )
+
+    spec = auto_chart_spec(question, relationship)
+
+    assert (spec.chart_type, spec.x, spec.y) == (
+        "scatter",
+        "cumulative_return",
+        "max_drawdown",
+    )
+
+
+@pytest.mark.parametrize(
     ("question", "x", "y"),
     [
         (

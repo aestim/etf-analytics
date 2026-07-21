@@ -11,6 +11,7 @@ table instead of a broken chart.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 import pandas as pd
@@ -37,6 +38,10 @@ _RELATION_TERMS = (
     "correlate",
     "relation",
     "scatter",
+    "tend to",
+    "associated with",
+    "linked to",
+    "versus",
     "상관",
     "관계",
     "연관",
@@ -46,6 +51,11 @@ _RELATION_TERMS = (
     "을수록",
     "할수록",
     "클수록",
+)
+
+_ENGLISH_COMPARATIVE_RELATION = re.compile(
+    r"\b(?:higher|lower|larger|smaller|greater|more|less)\b"
+    r".*\b(?:higher|lower|larger|smaller|greater|more|less)\b"
 )
 
 _METADATA_NUMERIC_COLUMNS = {
@@ -89,6 +99,14 @@ def _is_metadata_numeric(column: str) -> bool:
         name in _METADATA_NUMERIC_COLUMNS
         or name.startswith("count_")
         or name.endswith("_count")
+    )
+
+
+def _asks_for_relationship(question: str) -> bool:
+    lowered = question.lower()
+    return (
+        any(term in lowered for term in _RELATION_TERMS)
+        or _ENGLISH_COMPARATIVE_RELATION.search(lowered) is not None
     )
 
 
@@ -187,8 +205,7 @@ def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
     if not numeric:
         return ChartSpec(chart_type="table", title="Result")
 
-    lowered_question = question.lower()
-    if any(term in lowered_question for term in _RELATION_TERMS) and len(numeric) >= 2:
+    if _asks_for_relationship(question) and len(numeric) >= 2:
         x, y = numeric[:2]
         return ChartSpec(
             chart_type="scatter",
