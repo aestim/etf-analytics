@@ -41,6 +41,11 @@ _RELATION_TERMS = (
     "관계",
     "연관",
     "산점도",
+    "비례",
+    "일수록",
+    "을수록",
+    "할수록",
+    "클수록",
 )
 
 _METADATA_NUMERIC_COLUMNS = {

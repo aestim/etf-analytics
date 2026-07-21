@@ -33,6 +33,8 @@ def render(spec: ChartSpec, df: pd.DataFrame):
         kwargs["title"] = spec.title
     renderers = {"line": px.line, "bar": px.bar, "scatter": px.scatter}
     fig = renderers[spec.chart_type](df, **kwargs)
+    if spec.chart_type == "scatter" and is_percent_metric(spec.x):
+        fig.update_xaxes(tickformat=".1%")
     if is_percent_metric(spec.y):
         fig.update_yaxes(tickformat=".1%")
     return fig

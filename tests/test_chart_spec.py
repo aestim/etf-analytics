@@ -117,6 +117,27 @@ def test_auto_selects_scatter_only_for_explicit_relationship_question():
     assert {spec.x, spec.y} == {"cumulative_return", "annualized_vol_30d"}
 
 
+def test_auto_understands_korean_comparative_relationship_question():
+    relationship = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "cumulative_return": [0.12, 0.18, -0.02],
+            "max_drawdown": [-0.09, -0.14, -0.17],
+        }
+    )
+
+    spec = auto_chart_spec("수익률이 높은 ETF일수록 최대 낙폭도 큰가?", relationship)
+    fig = render(spec, relationship)
+
+    assert (spec.chart_type, spec.x, spec.y) == (
+        "scatter",
+        "cumulative_return",
+        "max_drawdown",
+    )
+    assert fig.layout.xaxis.tickformat == ".1%"
+    assert fig.layout.yaxis.tickformat == ".1%"
+
+
 def test_auto_keeps_single_value_as_table():
     result = pd.DataFrame({"ticker": ["SPY"], "adj_close": [650.0]})
     assert auto_chart_spec("SPY 최신 가격", result).chart_type == "table"
