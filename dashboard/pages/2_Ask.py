@@ -165,11 +165,6 @@ def show_assistant(entry: dict, key: str) -> None:
             st.caption(entry["chart_note"])
 
 
-auto_chart = st.toggle(
-    "Automatically visualize suitable results",
-    value=True,
-    help="Uses the result shape only; it does not make an extra LLM call.",
-)
 st.caption(
     "Auto view: time series → line · rankings/comparisons → bar · "
     "relationships → scatter · everything else → table"
@@ -216,7 +211,7 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                 log_event(question, r.status, sql=r.sql, model=r.model)
             else:
                 fig, chart_note = None, ""
-                if auto_chart and r.df is not None and not r.df.empty:
+                if r.df is not None and not r.df.empty:
                     try:
                         spec = validate_spec(auto_chart_spec(question, r.df), r.df)
                         fig = render(spec, r.df)
