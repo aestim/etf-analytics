@@ -6,7 +6,7 @@ SQL generation → sqlglot guard → execution as etf_reader → (optional)
 ChartSpec → renderer. This page only wraps those parts in a chat UI.
 
 Free-tier handling: identical questions are served from cache (errors are
-never cached); 429 backoff lives in qa/ask.py's _with_backoff.
+never cached); 429/503 retry and model failover live in qa/ask.py's _with_backoff.
 Every question, generated SQL and error is logged to qa/logs/ask_ui.jsonl
 (input for the Week 5 eval).
 """
@@ -63,7 +63,14 @@ if _pw := _ask_password():
 # (e.g. Streamlit Cloud hasn't reinstalled requirements after a deploy), fail
 # gracefully with a clear message instead of a redacted crash page.
 try:
-    from ask import DailyQuotaError, _with_backoff, answer, generate_chart_spec, reader_ping  # noqa: E402
+    from ask import (  # noqa: E402
+        DailyQuotaError,
+        ProviderUnavailableError,
+        _with_backoff,
+        answer,
+        generate_chart_spec,
+        reader_ping,
+    )
     from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
     from render import render  # noqa: E402
     from sql_guard import MAX_ROWS  # noqa: E402
@@ -98,6 +105,8 @@ def cached_answer(question: str):
     """Serve identical questions from cache for an hour; never cache errors."""
     r = answer(question)
     if r.status == "error":
+        if r.error_kind == "provider_unavailable":
+            raise ProviderUnavailableError(r.reason)
         raise RuntimeError(r.reason)  # st.cache_data does not store exceptions
     return r
 
@@ -166,6 +175,16 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
             entry = {"role": "assistant", "kind": "error",
                      "text": "Daily free-tier quota exhausted for all models — try again tomorrow."}
             log_event(question, "daily_quota")
+        except ProviderUnavailableError:
+            entry = {
+                "role": "assistant",
+                "kind": "error",
+                "text": (
+                    "The LLM provider is temporarily unavailable. I tried the configured "
+                    "fallback models; please try again in a few minutes."
+                ),
+            }
+            log_event(question, "provider_unavailable")
         except Exception as e:  # noqa: BLE001
             entry = {"role": "assistant", "kind": "error", "text": f"Something went wrong: {e}"}
             log_event(question, "error", error=str(e))
@@ -181,6 +200,8 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                         fig = render(spec, r.df)
                         if fig is None and (why := TABLE_FALLBACK_REASONS.get("last")):
                             chart_note = f"Showing a table instead of a chart ({why})"
+                    except ProviderUnavailableError:
+                        chart_note = "LLM provider is temporarily unavailable; showing the table without a chart."
                     except Exception as e:  # noqa: BLE001 — chart failures must not kill the table
                         chart_note = f"Chart generation failed, showing table: {e}"
                 # getattr fallback: survives a stale in-memory ask.py after an

@@ -13,6 +13,7 @@ exclusively by this code, after validation.
 from __future__ import annotations
 
 import os
+import random
 import re
 import sys
 import time
@@ -22,6 +23,7 @@ from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
 from practice_structured import classify  # reuse the Week 1 intent gate as stage 1
@@ -31,13 +33,18 @@ from sql_guard import MAX_ROWS, GuardError, validate
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-# Free-tier quotas are tracked per model → on a daily (PerDay) quota error we
-# switch to the next model in the chain (flash first for quality, lite as the
-# fallback). Setting GEMINI_MODEL puts that model at the head of the chain.
-_DEFAULT_CHAIN = "gemini-flash-latest,gemini-flash-lite-latest"
+# Model aliases such as `gemini-flash-latest` can be hot-swapped to a new
+# release. Pin stable IDs so Q&A behaviour and availability do not silently
+# change underneath the deployed app. Flash is the quality default; Lite is a
+# lower-latency/fallback option with structured-output support.
+_DEFAULT_CHAIN = "gemini-3.5-flash,gemini-3.1-flash-lite"
 MODEL_CHAIN = [m.strip() for m in os.getenv("GEMINI_MODEL_CHAIN", _DEFAULT_CHAIN).split(",") if m.strip()]
 if _override := os.getenv("GEMINI_MODEL"):
+    _override = _override.strip()
     MODEL_CHAIN = [_override] + [m for m in MODEL_CHAIN if m != _override]
+
+if not MODEL_CHAIN:
+    raise ValueError("GEMINI_MODEL_CHAIN must contain at least one model ID")
 
 _model_idx = 0
 
@@ -47,11 +54,11 @@ def current_model() -> str:
 
 
 def _advance_model() -> bool:
-    """Switch to the next model on daily-quota exhaustion. False if none left."""
+    """Switch to the next configured model. False if none remains."""
     global _model_idx
     if _model_idx + 1 < len(MODEL_CHAIN):
         _model_idx += 1
-        print(f"   (daily quota → switching model: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})")
+        print(f"   (switching model: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})")
         return True
     return False
 
@@ -116,34 +123,92 @@ Database schema:
 """
 
 
-RETRY_WAITS = (20, 45, 90)  # exponential backoff for per-minute 429s — they clear if you wait
+RATE_LIMIT_WAITS = (20, 45, 90)  # per-minute 429s often clear after a longer wait
+UNAVAILABLE_WAITS = (1, 2, 4)  # 503 capacity errors: retry briefly, then fail over
+RETRY_JITTER_SECONDS = 1.0
 
 
 class DailyQuotaError(RuntimeError):
     """Daily quota exhausted — waiting won't help, stop immediately."""
 
 
-def _with_backoff(fn, *args):
-    """Wrapper for Gemini free-tier (429) errors.
+class ProviderUnavailableError(RuntimeError):
+    """Every configured model stayed unavailable after bounded retries."""
 
-    - Per-minute limit: wait (honouring the server-suggested retryDelay) and retry.
-    - Daily limit (PerDay): retrying is pointless → switch model or raise DailyQuotaError.
+
+def _sleep_with_jitter(base_delay: float) -> float:
+    """Sleep with small jitter so concurrent clients do not retry in lockstep."""
+    delay = base_delay + random.uniform(0, RETRY_JITTER_SECONDS)
+    time.sleep(delay)
+    return delay
+
+
+def _api_status_code(exc: Exception) -> int | None:
+    """Return a Gemini HTTP status without relying only on error prose.
+
+    Tests and some proxy layers may wrap the SDK exception, so retain a
+    conservative message fallback for the two statuses handled below.
     """
-    for attempt, wait in enumerate((*RETRY_WAITS, None)):
+    if isinstance(exc, genai_errors.APIError):
+        return exc.code
+    msg = str(exc)
+    if re.search(r"(?:^|\D)503(?:\D|$)", msg) and "UNAVAILABLE" in msg.upper():
+        return 503
+    if re.search(r"(?:^|\D)429(?:\D|$)", msg) and "RESOURCE_EXHAUSTED" in msg.upper():
+        return 429
+    return None
+
+
+def _with_backoff(fn, *args):
+    """Call an LLM function with bounded retry and model failover.
+
+    - Per-minute 429: honour retryDelay (or use a longer exponential wait).
+    - Daily quota: switch model immediately; waiting cannot help.
+    - 503/UNAVAILABLE: make a few short, jittered retries, then switch model.
+
+    The model pointer is intentionally retained after a failover: a provider
+    that is unavailable now is unlikely to recover during the same Streamlit
+    session, and repeatedly returning to it would make every question slow.
+    """
+    rate_attempt = 0
+    unavailable_attempt = 0
+    while True:
         try:
             return fn(*args)
         except Exception as e:  # noqa: BLE001 — 429s are identified by message
             msg = str(e)
+            status_code = _api_status_code(e)
             if "PerDay" in msg or "per day" in msg.lower():
                 if _advance_model():
+                    rate_attempt = unavailable_attempt = 0
                     continue  # retry immediately on the next model (quotas are per model)
                 raise DailyQuotaError("daily free-tier quota exhausted for all models") from e
-            if wait is None or not ("429" in msg or "RESOURCE_EXHAUSTED" in msg):
+
+            if status_code == 503:
+                if unavailable_attempt < len(UNAVAILABLE_WAITS):
+                    delay = _sleep_with_jitter(UNAVAILABLE_WAITS[unavailable_attempt])
+                    unavailable_attempt += 1
+                    print(
+                        f"   (model unavailable — waiting {delay:.1f}s, "
+                        f"retry {unavailable_attempt}/{len(UNAVAILABLE_WAITS)})"
+                    )
+                    continue
+                if _advance_model():
+                    rate_attempt = unavailable_attempt = 0
+                    continue
+                raise ProviderUnavailableError(
+                    "all configured LLM models are temporarily unavailable"
+                ) from e
+
+            if status_code != 429:
+                raise
+            if rate_attempt >= len(RATE_LIMIT_WAITS):
                 raise
             m = re.search(r"retry(?:Delay)?\D*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
-            delay = float(m.group(1)) + 1 if m else wait
-            print(f"   (429 rate limit — waiting {delay:.0f}s, retry {attempt + 1}/{len(RETRY_WAITS)})")
-            time.sleep(delay)
+            base_delay = float(m.group(1)) + 1 if m else RATE_LIMIT_WAITS[rate_attempt]
+            delay = _sleep_with_jitter(base_delay)
+            rate_attempt += 1
+            print(f"   (429 rate limit — waiting {delay:.1f}s, retry {rate_attempt}/{len(RATE_LIMIT_WAITS)})")
 
 
 def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry: bool = True):
@@ -267,6 +332,7 @@ class AskResult:
     safe_sql: str = ""  # SQL actually executed, after passing the guard
     explanation: str = ""
     model: str = ""  # which model produced this answer (fallback-chain tracking)
+    error_kind: str = ""  # provider_unavailable | other; lets the UI explain graceful degradation
     df: pd.DataFrame | None = field(default=None, repr=False)
 
     @property
@@ -305,6 +371,14 @@ def answer(question: str) -> AskResult:
         )
     except DailyQuotaError:
         raise  # waiting won't help — propagate so the runner can stop and explain how to resume
+    except ProviderUnavailableError:
+        return AskResult(
+            question,
+            "error",
+            reason="The LLM provider is temporarily unavailable. Please try again in a few minutes.",
+            model=current_model(),
+            error_kind="provider_unavailable",
+        )
     except Exception as e:  # noqa: BLE001 — API/DB failures are data too
         return AskResult(question, "error", reason=f"{type(e).__name__}: {e}")
 

@@ -6,14 +6,14 @@ Week 2 automated test runner (free-tier-quota aware).
     python qa/run_week2.py --only 3,17   # re-run specific questions
     python qa/run_week2.py --sleep 20    # adjust pacing
 
-Models switch automatically: when flash hits its daily (PerDay) quota, the
-chain falls back to lite and keeps going. (Change the chain with
+Models switch automatically: daily (PerDay) quota exhaustion switches model
+immediately; 503 capacity errors retry briefly and then fail over. (Change the chain with
 GEMINI_MODEL_CHAIN=..., force one model with GEMINI_MODEL=...) The "model"
 field in the jsonl records which model answered each question.
 
 Quota strategy (2 API calls per question = classify + generate_sql, ~35 total):
   - default 15s between questions → ~8 calls/min (below the free-tier RPM)
-  - per-call 429 backoff lives in ask.py's _with_backoff (honours retryDelay)
+  - per-call 429/503 recovery lives in ask.py's _with_backoff (honours retryDelay)
   - on full daily-quota exhaustion: stop immediately and print the resume command
 
 Records:
