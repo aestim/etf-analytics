@@ -197,6 +197,64 @@ def test_auto_relationship_axes_follow_metric_order_and_ignore_coefficient(
     assert (spec.chart_type, spec.x, spec.y) == ("scatter", x, y)
 
 
+def test_correlation_result_contract_selects_scatter_for_unrecognized_wording():
+    relationship = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "cumulative_return": [0.12, 0.18, -0.02],
+            "annualized_vol_30d": [0.16, 0.22, 0.09],
+            "correlation": [0.42, 0.42, 0.42],
+        }
+    )
+
+    spec = auto_chart_spec(
+        "How do return performance and volatility move together across ETFs?",
+        relationship,
+    )
+
+    assert (spec.chart_type, spec.x, spec.y) == (
+        "scatter",
+        "cumulative_return",
+        "annualized_vol_30d",
+    )
+
+
+def test_correlation_result_needs_two_actual_metrics():
+    result = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "cumulative_return": [0.12, 0.18, -0.02],
+            "correlation": [0.42, 0.42, 0.42],
+        }
+    )
+
+    spec = auto_chart_spec("Return summary", result)
+
+    assert (spec.chart_type, spec.x, spec.y) == (
+        "bar",
+        "ticker",
+        "cumulative_return",
+    )
+
+
+def test_two_metrics_without_relationship_signal_remain_a_bar_chart():
+    result = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "cumulative_return": [0.12, 0.18, -0.02],
+            "annualized_vol_30d": [0.16, 0.22, 0.09],
+        }
+    )
+
+    spec = auto_chart_spec("ETF metric summary", result)
+
+    assert (spec.chart_type, spec.x, spec.y) == (
+        "bar",
+        "ticker",
+        "cumulative_return",
+    )
+
+
 def test_auto_keeps_single_value_as_table():
     result = pd.DataFrame({"ticker": ["SPY"], "adj_close": [650.0]})
     assert auto_chart_spec("SPY 최신 가격", result).chart_type == "table"

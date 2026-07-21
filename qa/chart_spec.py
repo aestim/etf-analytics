@@ -1,9 +1,9 @@
 """Deterministic chart selection plus validation for the Ask result table.
 
-Chart choice is based only on the question and dataframe shape. It never
-needs another LLM request: time series become lines, rankings/comparisons
-become bars, explicitly requested relationships become scatter plots, and
-everything else remains a table.
+Chart choice is based only on the executed result contract, question and
+dataframe shape. It never needs another LLM request: time series become lines,
+rankings/comparisons become bars, relationship results become scatter plots,
+and everything else remains a table.
 
 Validation is still fail-safe. If a spec cannot be drawn, callers receive a
 table instead of a broken chart.
@@ -110,6 +110,11 @@ def _asks_for_relationship(question: str) -> bool:
     )
 
 
+def _has_correlation_result(df: pd.DataFrame) -> bool:
+    """Recognize the SQL relationship-result contract independent of wording."""
+    return any(str(column).lower() == "correlation" for column in df.columns)
+
+
 def _numeric_columns(question: str, df: pd.DataFrame) -> list[str]:
     candidates = [
         column
@@ -205,7 +210,9 @@ def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
     if not numeric:
         return ChartSpec(chart_type="table", title="Result")
 
-    if _asks_for_relationship(question) and len(numeric) >= 2:
+    relationship_result = _has_correlation_result(df)
+    relationship_wording = _asks_for_relationship(question)
+    if (relationship_result or relationship_wording) and len(numeric) >= 2:
         x, y = numeric[:2]
         return ChartSpec(
             chart_type="scatter",
