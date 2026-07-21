@@ -47,13 +47,15 @@ Source: raw / Postgres `raw.etf_prices` (after load). Cleans types and removes d
 
 ### `mart_etf_returns`
 
-Daily simple returns from adjusted close.
+Daily simple returns from adjusted close, with volume retained for paired
+descriptive analysis against risk metrics.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `ticker` | string | ETF symbol |
 | `price_date` | date | Trading date |
 | `adj_close` | numeric | Adjusted close |
+| `volume` | bigint | Daily share volume |
 | `daily_return` | numeric | \((adj\_close_t / adj\_close_{t-1}) - 1\) |
 
 **Grain:** `ticker` × `price_date` (first row per ticker has `NULL` daily_return).
@@ -69,6 +71,7 @@ Rolling risk statistics (window = 30 trading days unless changed in dbt).
 | `ticker` | string | ETF symbol |
 | `price_date` | date | As-of date |
 | `rolling_vol_30d` | numeric | Sample std dev of `daily_return` over 30 days |
+| `annualized_vol_30d` | numeric | `rolling_vol_30d × sqrt(252)` |
 | `drawdown` | numeric | \((adj\_close / running\_max) - 1\) |
 | `as_of_date` | date | Same as `price_date`; for freshness checks |
 

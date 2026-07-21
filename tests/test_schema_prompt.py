@@ -13,6 +13,7 @@ def test_prompt_contains_column_descriptions():
     prompt = build_schema_prompt()
     assert "rolling_vol_30d" in prompt
     assert "adj_close" in prompt
+    assert "volume" in prompt
 
 
 def test_prompt_contains_universe_with_new_tickers():

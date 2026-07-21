@@ -1,8 +1,8 @@
 """
 Ask — chat page for natural-language questions over the marts (Week 4).
 
-The pipeline is exactly the pytest-covered parts from qa/: intent gate →
-SQL generation → sqlglot guard → execution as etf_reader → deterministic
+The pipeline is exactly the pytest-covered parts from qa/: one structured call
+for scope routing + SQL → sqlglot guard → execution as etf_reader → deterministic
 ChartSpec → renderer. This page only wraps those parts in a chat UI.
 
 Free-tier handling: identical questions are served from cache (errors are
@@ -31,8 +31,9 @@ from db import PLOTLY_LAYOUT, warehouse_available  # noqa: E402
 st.set_page_config(page_title="Ask", page_icon="💬", layout="wide")
 st.title("💬 Ask")
 st.caption(
-    "Ask **lookups, comparisons and rankings** over prices, returns, volatility "
-    "and drawdown — in English or Korean. Predictions, investment advice and "
+    "Ask **lookups, comparisons, rankings and relationships** over prices, returns, "
+    "volume, volatility, drawdown and ETF metadata — in English or Korean. "
+    "Predictions, investment advice and "
     "backtest requests are politely refused. Generated SQL is validated with "
     "sqlglot and executed by a read-only role."
 )

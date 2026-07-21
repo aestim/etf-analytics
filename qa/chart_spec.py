@@ -49,6 +49,7 @@ _RELATION_TERMS = (
 )
 
 _METADATA_NUMERIC_COLUMNS = {
+    "correlation",
     "count",
     "observations",
     "observation_count",
@@ -57,16 +58,19 @@ _METADATA_NUMERIC_COLUMNS = {
 }
 
 _METRIC_HINTS = (
+    (("레버리지", "leverage"), ("leverage",)),
+    (("거래량", "volume"), ("avg_daily_volume", "volume")),
     (("수익", "return"), ("cumulative_return", "ytd_return", "daily_return", "return")),
     (("변동", "volatility", "volatile"), ("annualized_vol_30d", "rolling_vol_30d", "volatility")),
     (("낙폭", "drawdown"), ("drawdown",)),
     (("가격", "price"), ("adj_close", "close", "price")),
-    (("거래량", "volume"), ("volume",)),
 )
 
 _METRIC_PRIORITY = (
     "cumulative_return",
     "ytd_return",
+    "leverage",
+    "avg_daily_volume",
     "annualized_vol_30d",
     "rolling_vol_30d",
     "drawdown",
@@ -101,13 +105,17 @@ def _numeric_columns(question: str, df: pd.DataFrame) -> list[str]:
 
     lowered_question = question.lower()
     ordered: list[str] = []
+    matched_hints = []
     for terms, preferred_names in _METRIC_HINTS:
-        if any(term in lowered_question for term in terms):
-            for preferred in preferred_names:
-                ordered.extend(
-                    column for column in candidates
-                    if preferred in str(column).lower() and column not in ordered
-                )
+        positions = [lowered_question.find(term) for term in terms if term in lowered_question]
+        if positions:
+            matched_hints.append((min(positions), preferred_names))
+    for _, preferred_names in sorted(matched_hints, key=lambda match: match[0]):
+        for preferred in preferred_names:
+            ordered.extend(
+                column for column in candidates
+                if preferred in str(column).lower() and column not in ordered
+            )
     for preferred in _METRIC_PRIORITY:
         ordered.extend(
             column for column in candidates

@@ -5,7 +5,9 @@ Run:   python qa/practice_structured.py
 Pass:  all questions parse into the pydantic schema, and the advice/backtest
        ones are classified out_of_scope.
 
-This classifier became stage 1 of the Week 2 text-to-SQL pipeline (ask.py).
+This remains a standalone learning exercise. Production ask.py now combines
+scope routing and SQL generation in one structured-output call to avoid a
+second API request and contradictory routing decisions.
 """
 
 import os

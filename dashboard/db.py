@@ -123,7 +123,9 @@ def _parquet_marts() -> tuple[pd.DataFrame, pd.DataFrame]:
     df = _read_latest_snapshots()
     grouped = df.groupby("ticker")["adj_close"]
 
-    returns = df[["ticker", "price_date", "adj_close"]].copy()
+    # reindex keeps the serving schema stable for an older snapshot that may
+    # predate volume ingestion (the column is then present with null values).
+    returns = df.reindex(columns=["ticker", "price_date", "adj_close", "volume"]).copy()
     returns["daily_return"] = grouped.pct_change()
 
     risk = df[["ticker", "price_date"]].copy()
@@ -144,7 +146,7 @@ def _parquet_marts() -> tuple[pd.DataFrame, pd.DataFrame]:
 def load_mart_returns() -> pd.DataFrame:
     if warehouse_available():
         query = """
-            select ticker, price_date, adj_close, daily_return
+            select ticker, price_date, adj_close, volume, daily_return
             from public_marts.mart_etf_returns
             order by ticker, price_date
         """

@@ -138,6 +138,40 @@ def test_auto_understands_korean_comparative_relationship_question():
     assert fig.layout.yaxis.tickformat == ".1%"
 
 
+@pytest.mark.parametrize(
+    ("question", "x", "y"),
+    [
+        (
+            "레버리지 배수와 연환산 변동성의 상관관계는?",
+            "leverage",
+            "avg_annualized_vol_30d",
+        ),
+        (
+            "거래량과 변동성 사이에 관계가 있나?",
+            "avg_daily_volume",
+            "avg_annualized_vol_30d",
+        ),
+    ],
+)
+def test_auto_relationship_axes_follow_metric_order_and_ignore_coefficient(
+    question, x, y
+):
+    relationship = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "leverage": [1.0, 2.0, 1.0],
+            "avg_daily_volume": [10_000.0, 8_000.0, 3_000.0],
+            "avg_annualized_vol_30d": [0.16, 0.22, 0.09],
+            "correlation": [0.5, 0.5, 0.5],
+            "observations": [250, 250, 250],
+        }
+    )
+
+    spec = auto_chart_spec(question, relationship)
+
+    assert (spec.chart_type, spec.x, spec.y) == ("scatter", x, y)
+
+
 def test_auto_keeps_single_value_as_table():
     result = pd.DataFrame({"ticker": ["SPY"], "adj_close": [650.0]})
     assert auto_chart_spec("SPY 최신 가격", result).chart_type == "table"

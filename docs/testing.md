@@ -18,7 +18,8 @@ that need a live data warehouse or an external provider.
   does not rerun pytest/dbt parse because no executable code changed.
 - Superseded runs on the same branch are cancelled; both jobs have bounded timeouts.
 - CI and the Airflow/daily-ingest runtime use Python 3.11.
-- Gemini is always mocked in pytest. Live model calls would spend quota and make
+- Gemini is always mocked in pytest. The single scope-routing + SQL call is
+  covered by orchestration contracts; live model calls would spend quota and make
   CI depend on provider capacity, so they belong in the separately reviewed eval run.
 - Pull-request CI does not connect to Postgres. The SQL guard and orchestration are
   tested offline; live dbt assertions run in the scheduled workflow when secrets exist.

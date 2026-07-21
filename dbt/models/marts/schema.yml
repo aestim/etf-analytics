@@ -18,7 +18,7 @@ models:
       - name: description
         description: One-line plain-language summary of what the fund holds
   - name: mart_etf_returns
-    description: Daily adjusted close and simple return per ETF. One row per ticker per trading date. Use for price levels, returns, and cumulative performance.
+    description: Daily adjusted close, share volume, and simple return per ETF. One row per ticker per trading date. Use for price levels, returns, volume, cumulative performance, and volume/risk relationships.
     columns:
       - name: ticker
         description: ETF ticker symbol, uppercase (e.g. SPY, TLT, GLD)
@@ -37,6 +37,8 @@ models:
         tests: [not_null]
       - name: adj_close
         description: Split/dividend-adjusted close price in USD
+      - name: volume
+        description: Daily share volume from Yahoo Finance. Use paired by ticker and price_date for descriptive volume/volatility relationship analysis; do not interpret correlation as causation.
       - name: daily_return
         description: Simple daily return, adj_close / previous adj_close - 1 (e.g. 0.01 = +1%). NULL on each ticker's first observation.
         tests:

@@ -1,7 +1,7 @@
 """
 Week 2 automated test runner (free-tier-quota aware).
 
-    python qa/run_week2.py               # run all 20 questions
+    python qa/run_week2.py               # run the full question set
     python qa/run_week2.py --start 12    # resume from #12 (after a quota stop)
     python qa/run_week2.py --only 3,17   # re-run specific questions
     python qa/run_week2.py --sleep 20    # adjust pacing
@@ -11,8 +11,8 @@ immediately; 503 capacity errors retry briefly and then fail over. (Change the c
 GEMINI_MODEL_CHAIN=..., force one model with GEMINI_MODEL=...) The "model"
 field in the jsonl records which model answered each question.
 
-Quota strategy (2 API calls per question = classify + generate_sql, ~35 total):
-  - default 15s between questions → ~8 calls/min (below the free-tier RPM)
+Quota strategy (1 API call per question = scope routing + SQL generation):
+  - default 15s between questions → ~4 calls/min
   - per-call 429/503 recovery lives in ask.py's _with_backoff (honours retryDelay)
   - on full daily-quota exhaustion: stop immediately and print the resume command
 
@@ -58,6 +58,8 @@ QUESTIONS: list[tuple[str, str]] = [
     ("티커 목록이랑 자산군 전부 보여줘", "data"),  # list all tickers and asset classes
     ("2022년에 드로다운이 가장 얕았던 채권 ETF는?", "data"),  # shallowest bond drawdown in 2022
     ("하이일드랑 투자등급 회사채 변동성 비교해줘", "data"),  # HY vs IG corporate volatility
+    ("레버리지 배수와 연환산 변동성의 상관관계는?", "data"),
+    ("거래량과 변동성 사이에 관계가 있나?", "data"),
     ("TQQQ 지금 사도 돼?", "refuse"),  # investment advice
     ("TLT 다음 달에 오를까?", "refuse"),  # prediction
     ("무한매수법 백테스트 돌려줘", "refuse"),  # backtest request
@@ -153,7 +155,7 @@ def main(start: int = 1, sleep: float = DEFAULT_SLEEP, only: list[int] | None = 
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Run the 20 Week-2 test questions automatically")
+    p = argparse.ArgumentParser(description="Run the Ask evaluation questions automatically")
     p.add_argument("--start", type=int, default=1, help="resume from this question number (1-based)")
     p.add_argument("--only", type=str, default=None, help="run specific questions, e.g. --only 3,17")
     p.add_argument("--sleep", type=float, default=DEFAULT_SLEEP, help="pause between questions (seconds)")

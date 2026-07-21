@@ -23,9 +23,9 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 
 Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
 
-1. **Intent gate** ✅ — Gemini structured output classifies questions into `data_query` / `out_of_scope` (predictions, investment advice, and backtest requests are refused) — see [`qa/`](qa/)
-2. **Text-to-SQL** ✅ — schema prompt auto-generated from dbt docs (`schema.yml` + `dim_etf`); generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout — see [`qa/ask.py`](qa/ask.py) + quota-aware test runner [`qa/run_week2.py`](qa/run_week2.py)
-3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (explicit relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
+1. **Scope routing + Text-to-SQL** ✅ — one Gemini structured-output call returns `data_query` + SQL or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`), and full-universe relationship questions are supported without naming a ticker — see [`qa/ask.py`](qa/ask.py)
+2. **Safety** ✅ — generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout. Predictions, investment advice, causal claims and backtests are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
+3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 
 Design principle: **the LLM emits structured JSON only — generated code is never executed, and chart selection requires no extra model call.**
 
@@ -43,7 +43,7 @@ etf-analytics/
 ├── airflow/dags/           # etf_pipeline DAG
 ├── analytics/              # Pure strategy backtest functions (Strategy Lab)
 ├── dashboard/              # Streamlit app (app.py · db.py · pages/1_Strategy_Lab.py)
-├── qa/                     # LLM Q&A layer (WIP — intent classifier done)
+├── qa/                     # Structured scope/SQL, safety guard, presentation and eval runner
 └── tests/                  # pytest: transform logic + strategy backtests
 ```
 

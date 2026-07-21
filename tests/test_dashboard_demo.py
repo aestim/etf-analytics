@@ -46,12 +46,17 @@ def test_parquet_marts_match_return_volatility_and_drawdown_definitions(monkeypa
             "ticker": ["FLAT"] * 31 + ["DROP"] * 31,
             "price_date": list(dates) * 2,
             "adj_close": [100.0] * 31 + [100.0] * 30 + [80.0],
+            "volume": [1_000] * 31 + [2_000] * 31,
         }
     )
     monkeypatch.setattr(db, "_read_latest_snapshots", lambda: snapshots)
 
     returns, risk = db._parquet_marts.__wrapped__()
 
+    assert returns.groupby("ticker")["volume"].first().to_dict() == {
+        "DROP": 2_000,
+        "FLAT": 1_000,
+    }
     assert returns.groupby("ticker").head(1)["daily_return"].isna().all()
     drop_last = risk[risk["ticker"] == "DROP"].iloc[-1]
     assert drop_last["drawdown"] == pytest.approx(-0.2)

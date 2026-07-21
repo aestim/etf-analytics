@@ -3,7 +3,7 @@ Week 2 (3/3): question → table. Assembles the whole pipeline.
 
     python qa/ask.py "How volatile was TLT over the past year?"
 
-Flow:  intent gate (Week 1) → SQL generation (structured output)
+Flow:  scope routing + SQL generation (one structured-output call)
        → guard (sql_guard) → execute as etf_reader (timeout) → DataFrame
 
 Core principle: the LLM only fills in forms (JSON). Execution is done
@@ -19,6 +19,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -27,7 +28,7 @@ from httpx import TimeoutException
 from pydantic import BaseModel
 
 from gemini_runtime import new_client
-from practice_structured import classify  # reuse the Week 1 intent gate as stage 1
+from presentation import correlation_summary
 from schema_prompt import SCHEMA_NAME, build_schema_prompt
 from sql_guard import MAX_ROWS, GuardError, validate
 
@@ -67,12 +68,15 @@ STATEMENT_TIMEOUT_MS = 5000  # defence layer 3: kill runaway queries
 
 
 class SqlAnswer(BaseModel):
+    intent: Literal["data_query", "out_of_scope"]
     sql: str
-    explanation: str  # one or two sentences on how the SQL answers the question
+    explanation: str  # query method or a concise refusal reason
 
 
 DEFAULT_RETURN_LOOKBACK = "1 year"
 MIN_DEFAULT_RETURN_OBSERVATIONS = 200
+DEFAULT_RELATIONSHIP_LOOKBACK = "1 year"
+MIN_RELATIONSHIP_OBSERVATIONS = 200
 
 
 # Few-shot "question → correct SQL" pairs. Their job is to teach style
@@ -80,6 +84,7 @@ MIN_DEFAULT_RETURN_OBSERVATIONS = 200
 FEW_SHOTS = f"""
 Example 1
 Q: 지난 1년 TLT 변동성 어땠어?
+Intent: data_query
 SQL: SELECT price_date, rolling_vol_30d
      FROM public_marts.mart_etf_risk_metrics
      WHERE ticker = 'TLT' AND price_date >= CURRENT_DATE - INTERVAL '1 year'
@@ -87,6 +92,7 @@ SQL: SELECT price_date, rolling_vol_30d
 
 Example 2
 Q: Which long-term treasury ETF had the lowest volatility this year?
+Intent: data_query
 SQL: SELECT r.ticker, AVG(r.rolling_vol_30d) AS avg_daily_vol
      FROM public_marts.mart_etf_risk_metrics AS r
      JOIN public_marts.dim_etf AS d ON r.ticker = d.ticker
@@ -97,6 +103,7 @@ SQL: SELECT r.ticker, AVG(r.rolling_vol_30d) AS avg_daily_vol
 
 Example 3
 Q: 올해 수익률 좋은 ETF 5개는?
+Intent: data_query
 SQL: SELECT ticker, EXP(SUM(LN(1 + daily_return))) - 1 AS ytd_return
      FROM public_marts.mart_etf_returns
      WHERE price_date >= DATE_TRUNC('year', CURRENT_DATE)
@@ -107,6 +114,7 @@ SQL: SELECT ticker, EXP(SUM(LN(1 + daily_return))) - 1 AS ytd_return
 
 Example 4
 Q: 가장 수익률 높은 ETF 3개 보여줘
+Intent: data_query
 SQL: SELECT ticker,
             MIN(price_date) AS period_start,
             MAX(price_date) AS as_of_date,
@@ -119,13 +127,74 @@ SQL: SELECT ticker,
      HAVING COUNT(daily_return) >= {MIN_DEFAULT_RETURN_OBSERVATIONS}
      ORDER BY cumulative_return DESC
      LIMIT 3
+
+Example 5
+Q: 레버리지 배수와 연환산 변동성의 상관관계는?
+Intent: data_query
+SQL: WITH per_etf AS (
+         SELECT d.ticker,
+                d.leverage::double precision AS leverage,
+                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
+                MIN(r.price_date) AS period_start,
+                MAX(r.price_date) AS as_of_date,
+                COUNT(r.annualized_vol_30d) AS observations
+         FROM public_marts.mart_etf_risk_metrics AS r
+         JOIN public_marts.dim_etf AS d ON r.ticker = d.ticker
+         WHERE r.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+           AND r.annualized_vol_30d IS NOT NULL
+         GROUP BY d.ticker, d.leverage
+         HAVING COUNT(r.annualized_vol_30d) >= {MIN_RELATIONSHIP_OBSERVATIONS}
+     )
+     SELECT *,
+            CORR(leverage, avg_annualized_vol_30d) OVER () AS correlation
+     FROM per_etf
+     ORDER BY leverage, ticker
+
+Example 6
+Q: 거래량과 변동성 사이에 관계가 있나?
+Intent: data_query
+SQL: WITH per_etf AS (
+         SELECT p.ticker,
+                AVG(p.volume)::double precision AS avg_daily_volume,
+                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
+                MIN(p.price_date) AS period_start,
+                MAX(p.price_date) AS as_of_date,
+                COUNT(r.annualized_vol_30d) AS observations
+         FROM public_marts.mart_etf_returns AS p
+         JOIN public_marts.mart_etf_risk_metrics AS r
+           ON p.ticker = r.ticker AND p.price_date = r.price_date
+         WHERE p.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+           AND p.volume IS NOT NULL
+           AND r.annualized_vol_30d IS NOT NULL
+         GROUP BY p.ticker
+         HAVING COUNT(r.annualized_vol_30d) >= {MIN_RELATIONSHIP_OBSERVATIONS}
+     )
+     SELECT *,
+            CORR(avg_daily_volume, avg_annualized_vol_30d) OVER () AS correlation
+     FROM per_etf
+     ORDER BY avg_daily_volume, ticker
+
+Example 7
+Q: TQQQ 지금 사도 돼?
+Intent: out_of_scope
+SQL: ""
+Explanation: Investment advice is outside the warehouse analytics scope.
 """
 
 SQL_SYSTEM_PROMPT = f"""
-You translate analytics questions (Korean or English) into a single PostgreSQL
-SELECT statement over the tables below. Rules:
+You route ETF questions and, when supported, translate them into one PostgreSQL
+SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
 
-- Exactly ONE SELECT statement. No semicolons, comments, DDL, or writes.
+- intent="data_query" for descriptive lookups, aggregations, rankings,
+  comparisons, time series, and relationship/correlation analysis over the
+  documented warehouse. A ticker does NOT need to be named: analysis across
+  the full ETF universe is supported and is not "theoretical".
+- intent="out_of_scope" only for predictions, investment advice, causal or
+  "why" claims, path-dependent simulations/backtests, or fields absent from
+  the documented schema. For a refusal, set sql="" and give the exact reason.
+- For data_query, set sql to exactly ONE SELECT statement (WITH ... SELECT is
+  allowed). No semicolons, comments, DDL, or writes.
+
 - Always use fully qualified table names ({SCHEMA_NAME}.table_name).
 - Relative dates from CURRENT_DATE (e.g. INTERVAL '1 year', DATE_TRUNC('year', ...)).
 - Map plain-language groups (e.g. "미국 장기채", "leveraged") to dim_etf
@@ -141,6 +210,14 @@ SELECT statement over the tables below. Rules:
   incomplete history are not ranked against full-period observations.
 - rolling_vol_30d is DAILY volatility; use annualized_vol_30d when the question
   asks for "annual" / "연" volatility (they are the same series × sqrt(252)).
+- If a relationship/correlation question omits a period, use the trailing
+  {DEFAULT_RELATIONSHIP_LOOKBACK}. Build one comparable row per ticker with
+  both requested numeric measures, period_start, as_of_date and observations;
+  require at least {MIN_RELATIONSHIP_OBSERVATIONS} paired observations.
+  Include the Pearson coefficient as `correlation` using CORR(...) OVER () so
+  the same result supports a scatter plot and an exact numeric answer.
+- Relationship questions over all ETFs are descriptive data queries. Do not
+  reject them merely because no specific ticker is named.
 - Write `explanation` in English regardless of the question's language
   (the UI is English-only). State the applied period explicitly.
 
@@ -389,11 +466,14 @@ def answer(question: str) -> AskResult:
     failures to be data, not crashes.
     """
     try:
-        gate = _with_backoff(lambda q: classify(q, model=current_model()), question)
-        if gate.intent == "out_of_scope":
-            return AskResult(question, "refused_gate", reason=gate.reason, model=current_model())
-
         generated = _with_backoff(generate_sql, question)
+        if generated.intent == "out_of_scope":
+            return AskResult(
+                question,
+                "refused_gate",
+                reason=generated.explanation,
+                model=current_model(),
+            )
         try:
             safe_sql = validate(generated.sql)
         except GuardError as e:
@@ -401,10 +481,13 @@ def answer(question: str) -> AskResult:
                              model=current_model())
 
         df = run_readonly(safe_sql)
+        explanation = generated.explanation
+        if summary := correlation_summary(df):
+            explanation = f"{explanation}\n\n{summary}"
         return AskResult(
             question, "answered",
             sql=generated.sql, safe_sql=safe_sql,
-            explanation=generated.explanation, df=df, model=current_model(),
+            explanation=explanation, df=df, model=current_model(),
         )
     except DailyQuotaError:
         raise  # waiting won't help — propagate so the runner can stop and explain how to resume
