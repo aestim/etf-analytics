@@ -1,5 +1,7 @@
 """Dashboard ticker colors stay legible on the black Plotly theme."""
 
+import ast
+import importlib
 import sys
 from pathlib import Path
 
@@ -31,3 +33,22 @@ def test_ticker_mapping_is_stable_and_never_uses_old_black_color():
     assert colors == ticker_color_map(reversed(tickers))
     assert colors["QLD"] != "#222A2A"
     assert all(_contrast_against_black(color) >= 4.5 for color in colors.values())
+
+
+def test_dashboard_entrypoint_local_imports_resolve():
+    """Catch stale re-exports before Streamlit deploys a broken home page."""
+    app_path = ROOT / "dashboard" / "app.py"
+    tree = ast.parse(app_path.read_text(encoding="utf-8"))
+    missing: list[str] = []
+
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or node.module not in {"chart_colors", "db"}:
+            continue
+        imported_module = importlib.import_module(node.module)
+        missing.extend(
+            f"{node.module}.{alias.name}"
+            for alias in node.names
+            if not hasattr(imported_module, alias.name)
+        )
+
+    assert missing == []

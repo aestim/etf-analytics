@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from chart_colors import ticker_color_map
 from db import (
     GLOSSARY,
     PLOTLY_LAYOUT,
@@ -17,7 +18,6 @@ from db import (
     load_dim_etf,
     load_mart_returns,
     load_mart_risk,
-    ticker_color_map,
 )
 
 
