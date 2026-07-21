@@ -84,6 +84,43 @@ def test_all_models_timeout_returns_clear_error(reset_model_chain):
     assert reset_model_chain == []
 
 
+def test_504_deadline_fails_over_immediately(reset_model_chain):
+    calls = []
+
+    def call():
+        calls.append(ask.current_model())
+        if ask.current_model() == "primary":
+            raise genai_errors.ServerError(
+                504,
+                {
+                    "error": {
+                        "code": 504,
+                        "message": "Deadline expired before operation could complete.",
+                        "status": "DEADLINE_EXCEEDED",
+                    }
+                },
+            )
+        return "ok"
+
+    assert ask._with_backoff(call) == "ok"
+    assert calls == ["primary", "fallback"]
+    assert reset_model_chain == []
+
+
+def test_wrapped_504_deadline_is_recognized(reset_model_chain):
+    calls = []
+
+    def call():
+        calls.append(ask.current_model())
+        if ask.current_model() == "primary":
+            raise RuntimeError("504 DEADLINE_EXCEEDED: operation timed out")
+        return "ok"
+
+    assert ask._with_backoff(call) == "ok"
+    assert calls == ["primary", "fallback"]
+    assert reset_model_chain == []
+
+
 def test_429_retries_briefly_then_fails_over(reset_model_chain):
     calls = []
 

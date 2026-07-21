@@ -128,6 +128,8 @@ RATE_LIMIT_WAITS = (2, 5)  # keep interactive requests bounded before model fail
 RATE_LIMIT_MAX_SERVER_WAIT = 5.0
 UNAVAILABLE_WAITS = (1, 2, 4)  # 503 capacity errors: retry briefly, then fail over
 RETRY_JITTER_SECONDS = 1.0
+DEADLINE_STATUS_CODES = {408, 504}
+TRANSIENT_SERVICE_STATUS_CODES = {500, 502, 503}
 
 
 class DailyQuotaError(RuntimeError):
@@ -149,15 +151,23 @@ def _api_status_code(exc: Exception) -> int | None:
     """Return a Gemini HTTP status without relying only on error prose.
 
     Tests and some proxy layers may wrap the SDK exception, so retain a
-    conservative message fallback for the two statuses handled below.
+    conservative message fallback for statuses handled below.
     """
     if isinstance(exc, genai_errors.APIError):
         return exc.code
     msg = str(exc)
-    if re.search(r"(?:^|\D)503(?:\D|$)", msg) and "UNAVAILABLE" in msg.upper():
-        return 503
-    if re.search(r"(?:^|\D)429(?:\D|$)", msg) and "RESOURCE_EXHAUSTED" in msg.upper():
-        return 429
+    upper_msg = msg.upper()
+    status_names = {
+        408: "REQUEST_TIMEOUT",
+        429: "RESOURCE_EXHAUSTED",
+        500: "INTERNAL",
+        502: "BAD_GATEWAY",
+        503: "UNAVAILABLE",
+        504: "DEADLINE_EXCEEDED",
+    }
+    for code, status_name in status_names.items():
+        if re.search(rf"(?:^|\D){code}(?:\D|$)", msg) and status_name in upper_msg:
+            return code
     return None
 
 
@@ -171,8 +181,8 @@ def _with_backoff(fn, *args):
 
     - Per-minute 429: wait briefly, then fail over instead of blocking the UI.
     - Daily quota: switch model immediately; waiting cannot help.
-    - 503/UNAVAILABLE: make a few short, jittered retries, then switch model.
-    - Network timeout: the request already waited 20s, so fail over immediately.
+    - Transient 5xx: make a few short, jittered retries, then switch model.
+    - Network timeout/504: the request already waited 20s, so fail over immediately.
 
     The model pointer is intentionally retained after a failover: a provider
     that is unavailable now is unlikely to recover during the same Streamlit
@@ -192,7 +202,7 @@ def _with_backoff(fn, *args):
                     continue  # retry immediately on the next model (quotas are per model)
                 raise DailyQuotaError("daily free-tier quota exhausted for all models") from e
 
-            if _is_timeout(e):
+            if _is_timeout(e) or status_code in DEADLINE_STATUS_CODES:
                 if _advance_model():
                     rate_attempt = unavailable_attempt = 0
                     continue
@@ -200,7 +210,7 @@ def _with_backoff(fn, *args):
                     "all configured LLM models timed out"
                 ) from e
 
-            if status_code == 503:
+            if status_code in TRANSIENT_SERVICE_STATUS_CODES:
                 if unavailable_attempt < len(UNAVAILABLE_WAITS):
                     delay = _sleep_with_jitter(UNAVAILABLE_WAITS[unavailable_attempt])
                     unavailable_attempt += 1
