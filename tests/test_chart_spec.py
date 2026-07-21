@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from chart_spec import ChartSpec, validate_spec
+from chart_spec import ChartSpec, auto_chart_spec, validate_spec
 from render import render
 
 
@@ -30,6 +30,11 @@ def test_bad_group_by_is_dropped_but_chart_survives(df):
     spec = ChartSpec(chart_type="line", x="price_date", y="rolling_vol_30d", group_by="no_such_col")
     out = validate_spec(spec, df)
     assert out.chart_type == "line" and out.group_by is None
+
+
+def test_scatter_with_non_numeric_x_falls_back_to_table(df):
+    spec = ChartSpec(chart_type="scatter", x="ticker", y="rolling_vol_30d")
+    assert validate_spec(spec, df).chart_type == "table"
 
 
 # --- validate_spec: table fallback ------------------------------------------
@@ -69,3 +74,61 @@ def test_return_chart_uses_percentage_axis():
         returns,
     )
     assert fig.layout.yaxis.tickformat == ".1%"
+
+
+# --- deterministic auto selection -----------------------------------------
+
+
+def test_auto_selects_line_for_time_series(df):
+    spec = auto_chart_spec("지난 기간 변동성을 보여줘", df)
+    assert (spec.chart_type, spec.x, spec.y, spec.group_by) == (
+        "line",
+        "price_date",
+        "rolling_vol_30d",
+        "ticker",
+    )
+
+
+def test_auto_selects_bar_for_return_ranking_and_ignores_observations():
+    ranking = pd.DataFrame(
+        {
+            "ticker": ["TQQQ", "QLD", "IWM"],
+            "period_start": ["2025-07-22"] * 3,
+            "as_of_date": ["2026-07-22"] * 3,
+            "observations": [251, 251, 250],
+            "cumulative_return": [0.57, 0.42, 0.33],
+        }
+    )
+    spec = auto_chart_spec("가장 수익률 높은 ETF 3개", ranking)
+    assert (spec.chart_type, spec.x, spec.y) == ("bar", "ticker", "cumulative_return")
+    assert "2025-07-22 to 2026-07-22" in spec.title
+
+
+def test_auto_selects_scatter_only_for_explicit_relationship_question():
+    relationship = pd.DataFrame(
+        {
+            "ticker": ["SPY", "QQQ", "TLT"],
+            "cumulative_return": [0.12, 0.18, -0.02],
+            "annualized_vol_30d": [0.16, 0.22, 0.09],
+        }
+    )
+    spec = auto_chart_spec("수익률과 변동성의 관계를 보여줘", relationship)
+    assert spec.chart_type == "scatter"
+    assert {spec.x, spec.y} == {"cumulative_return", "annualized_vol_30d"}
+
+
+def test_auto_keeps_single_value_as_table():
+    result = pd.DataFrame({"ticker": ["SPY"], "adj_close": [650.0]})
+    assert auto_chart_spec("SPY 최신 가격", result).chart_type == "table"
+
+
+def test_auto_keeps_plain_list_as_table():
+    result = pd.DataFrame({"ticker": ["SPY", "QQQ", "TLT"]})
+    assert auto_chart_spec("티커 목록", result).chart_type == "table"
+
+
+def test_auto_keeps_large_category_result_as_table():
+    result = pd.DataFrame(
+        {"ticker": [f"ETF{i}" for i in range(21)], "cumulative_return": range(21)}
+    )
+    assert auto_chart_spec("ETF 수익률", result).chart_type == "table"

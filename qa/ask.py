@@ -298,29 +298,6 @@ def generate_sql(question: str) -> SqlAnswer:
     return _structured_call(SQL_SYSTEM_PROMPT, question, SqlAnswer)
 
 
-CHART_SYSTEM_PROMPT = """
-You pick a chart for the result table of a data question. Fill ChartSpec only.
-- chart_type: "line" (time series), "bar" (category comparison/ranking),
-  "scatter" (relation of two numeric columns), "table" (lists, single values, else)
-- x / y must be existing column names; y must be numeric.
-- group_by: column to color by (e.g. ticker) when several series share the chart, else null.
-- title: short, in English (the UI is English-only).
-- When period_start / as_of_date columns exist, mention the period in the title.
-"""
-
-
-def generate_chart_spec(question: str, df: pd.DataFrame):
-    """Week 3: have the LLM fill a chart form for the result table (forms only, never code)."""
-    from chart_spec import ChartSpec  # lazy import — the test runner works without charts
-
-    contents = (
-        f"Question: {question}\n"
-        f"Columns and dtypes:\n{df.dtypes.to_string()}\n"
-        f"First rows:\n{df.head(5).to_string(index=False)}"
-    )
-    return _structured_call(CHART_SYSTEM_PROMPT, contents, ChartSpec)
-
-
 def sslmode_for(host: str) -> str:
     """Managed Postgres (Neon/Supabase) requires SSL; local Docker has none.
     Default to 'require' unless the host is local — override with POSTGRES_SSLMODE."""
@@ -472,13 +449,13 @@ def ask_with_chart(question: str) -> None:
     df = ask(question)
     if df is None or df.empty:
         return
-    from chart_spec import TABLE_FALLBACK_REASONS, validate_spec
+    from chart_spec import TABLE_FALLBACK_REASONS, auto_chart_spec, validate_spec
     from render import render, save_html
 
-    spec = validate_spec(_with_backoff(generate_chart_spec, question, df), df)
+    spec = validate_spec(auto_chart_spec(question, df), df)
     fig = render(spec, df)
     if fig is None:
-        reason = TABLE_FALLBACK_REASONS.get("last", "the model chose a table")
+        reason = TABLE_FALLBACK_REASONS.get("last", "the automatic selector chose a table")
         print(f"\n📊 Table instead of a chart ({reason})")
         return
     path = save_html(fig, "ask")
@@ -490,7 +467,7 @@ if __name__ == "__main__":
 
     p = argparse.ArgumentParser(description="Natural-language question → table (+ chart with --chart)")
     p.add_argument("question", nargs="+", help="question in English or Korean")
-    p.add_argument("--chart", action="store_true", help="also save a chart (one extra API call)")
+    p.add_argument("--chart", action="store_true", help="also save an automatically selected chart")
     args = p.parse_args()
     q = " ".join(args.question)
     ask_with_chart(q) if args.chart else ask(q)

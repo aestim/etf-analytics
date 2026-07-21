@@ -2,7 +2,7 @@
 Ask — chat page for natural-language questions over the marts (Week 4).
 
 The pipeline is exactly the pytest-covered parts from qa/: intent gate →
-SQL generation → sqlglot guard → execution as etf_reader → (optional)
+SQL generation → sqlglot guard → execution as etf_reader → deterministic
 ChartSpec → renderer. This page only wraps those parts in a chat UI.
 
 Free-tier handling: identical questions are served from cache (errors are
@@ -66,12 +66,14 @@ try:
     from ask import (  # noqa: E402
         DailyQuotaError,
         ProviderUnavailableError,
-        _with_backoff,
         answer,
-        generate_chart_spec,
         reader_ping,
     )
-    from chart_spec import TABLE_FALLBACK_REASONS, validate_spec  # noqa: E402
+    from chart_spec import (  # noqa: E402
+        TABLE_FALLBACK_REASONS,
+        auto_chart_spec,
+        validate_spec,
+    )
     from presentation import is_percent_metric  # noqa: E402
     from render import render  # noqa: E402
     from sql_guard import MAX_ROWS  # noqa: E402
@@ -163,7 +165,15 @@ def show_assistant(entry: dict, key: str) -> None:
             st.caption(entry["chart_note"])
 
 
-auto_chart = st.toggle("Auto-generate chart (one extra API call per question)", value=False)
+auto_chart = st.toggle(
+    "Automatically visualize suitable results",
+    value=True,
+    help="Uses the result shape only; it does not make an extra LLM call.",
+)
+st.caption(
+    "Auto view: time series → line · rankings/comparisons → bar · "
+    "relationships → scatter · everything else → table"
+)
 
 if "chat" not in st.session_state:
     st.session_state.chat = []
@@ -208,12 +218,13 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                 fig, chart_note = None, ""
                 if auto_chart and r.df is not None and not r.df.empty:
                     try:
-                        spec = validate_spec(_with_backoff(generate_chart_spec, question, r.df), r.df)
+                        spec = validate_spec(auto_chart_spec(question, r.df), r.df)
                         fig = render(spec, r.df)
-                        if fig is None and (why := TABLE_FALLBACK_REASONS.get("last")):
-                            chart_note = f"Showing a table instead of a chart ({why})"
-                    except ProviderUnavailableError:
-                        chart_note = "LLM provider is temporarily unavailable; showing the table without a chart."
+                        if fig is None:
+                            if why := TABLE_FALLBACK_REASONS.get("last"):
+                                chart_note = f"Showing a table instead of a chart ({why})"
+                            else:
+                                chart_note = "Table view selected automatically for this result."
                     except Exception as e:  # noqa: BLE001 — chart failures must not kill the table
                         chart_note = f"Chart generation failed, showing table: {e}"
                 # getattr fallback: survives a stale in-memory ask.py after an

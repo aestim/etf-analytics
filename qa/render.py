@@ -1,10 +1,9 @@
 """
-Week 3 (2/2): the four renderers — draw only validated ChartSpecs.
+The four renderers — draw only validated ChartSpecs.
 
 Only the functions here can produce charts (a whitelist). They receive a
-form the LLM filled in, never code the LLM wrote, so the renderers are
-plain, boring, reviewable code. A generalisation of the dashboard's
-line_chart().
+deterministically selected form, so the renderers remain plain, reviewable
+code. A generalisation of the dashboard's line_chart().
 
 Covered by tests/test_chart_spec.py.
 """

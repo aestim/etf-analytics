@@ -76,9 +76,10 @@ flowchart LR
   S --> V{sqlglot guard<br/>single SELECT · allowlist tables · forced LIMIT}
   V -- rejected --> R2[Refuse + show reason]
   V -- safe SQL --> X[(Execute as etf_reader<br/>read-only · SET LOCAL statement_timeout)]
-  X --> C[ChartSpec<br/>pydantic-validated]
-  C -- invalid --> T[Table fallback]
-  C -- valid --> P[Whitelisted renderer]
+  X --> C[Deterministic chart selection<br/>line · bar · scatter · table]
+  C --> P{ChartSpec<br/>pydantic-validated}
+  P -- invalid or table --> T[Table fallback]
+  P -- valid chart --> W[Whitelisted renderer]
 
   classDef gate fill:#3b2f5e,stroke:#8a7fb8,color:#fff;
   classDef exec fill:#1f4d3a,stroke:#5fae86,color:#fff;

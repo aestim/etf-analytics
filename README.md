@@ -25,9 +25,9 @@ Plain-language questions ("Which long-duration Treasury ETF had the lowest volat
 
 1. **Intent gate** ✅ — Gemini structured output classifies questions into `data_query` / `out_of_scope` (predictions, investment advice, and backtest requests are refused) — see [`qa/`](qa/)
 2. **Text-to-SQL** ✅ — schema prompt auto-generated from dbt docs (`schema.yml` + `dim_etf`); generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables, then executed as `etf_reader` with a row limit and timeout — see [`qa/ask.py`](qa/ask.py) + quota-aware test runner [`qa/run_week2.py`](qa/run_week2.py)
-3. **Charts** — the model returns a chart-spec JSON (validated by pydantic, invalid specs fall back to a table); rendering is done only by whitelisted plotting functions (`qa/ask.py --chart`)
+3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (explicit relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 
-Design principle: **the LLM emits structured JSON only — generated code is never executed.**
+Design principle: **the LLM emits structured JSON only — generated code is never executed, and chart selection requires no extra model call.**
 
 ## Repository layout
 
