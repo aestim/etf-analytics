@@ -6,6 +6,10 @@ from google.genai import errors as genai_errors
 import ask
 
 
+def test_default_chain_prefers_flash_lite():
+    assert ask._DEFAULT_CHAIN == "gemini-3.1-flash-lite,gemini-3.5-flash"
+
+
 @pytest.fixture(autouse=True)
 def reset_model_chain(monkeypatch):
     """Each test gets a fresh two-model chain and no real waiting."""

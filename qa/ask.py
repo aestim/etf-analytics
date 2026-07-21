@@ -36,9 +36,9 @@ load_dotenv(ROOT / ".env")
 
 # Model aliases such as `gemini-flash-latest` can be hot-swapped to a new
 # release. Pin stable IDs so Q&A behaviour and availability do not silently
-# change underneath the deployed app. Flash is the quality default; Lite is a
-# lower-latency/fallback option with structured-output support.
-_DEFAULT_CHAIN = "gemini-3.5-flash,gemini-3.1-flash-lite"
+# change underneath the deployed app. Lite handles the routine structured
+# SQL work; Flash remains the higher-quality fallback.
+_DEFAULT_CHAIN = "gemini-3.1-flash-lite,gemini-3.5-flash"
 MODEL_CHAIN = [m.strip() for m in os.getenv("GEMINI_MODEL_CHAIN", _DEFAULT_CHAIN).split(",") if m.strip()]
 if _override := os.getenv("GEMINI_MODEL"):
     _override = _override.strip()
