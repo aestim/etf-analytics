@@ -59,7 +59,7 @@ execution.
 - **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
 - **Dashboard** — Streamlit multipage: English-first interface with a session-wide Korean switch, readable 17px base typography, stable 24-color palette, interactive ticker guide, mobile-safe charts, and translated metric tooltips
-- **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) with a translated beginner reading order and pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
+- **Strategy Lab** — a beginner-friendly custom ETF portfolio simulator (weights, capital, start date, staged entry, annual rebalancing, and optional comparison with five examples) plus the original five classic strategy examples; adjusted prices include ETF operating expenses and distributions, while pure pytest-covered functions keep calculations separate from the UI
 - **Ask** — Gemini routes English/Korean questions to a plain concept explanation, a safe historical-data query, or a refusal; answer tables and deterministic chart titles/axes follow the question language, and conclusion-first correlation summaries require no second LLM call
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
 - **Demo mode** — with no database reachable, dashboard pages use a bundled parquet fallback snapshot and recompute the marts in pandas; Ask can still explain concepts when Gemini is configured, while historical data questions wait for Postgres
@@ -203,7 +203,7 @@ Postgres plan that fits the workload (free-tier limits and pricing may change):
 ## Data & limitations
 
 - Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is the primary price for all return math
-- Strategy Lab uses simplified rules — no fees, taxes, or slippage; idle cash at 0%; signals lagged one day (no look-ahead)
+- Strategy Lab uses adjusted prices, so published ETF operating expenses and distributions are reflected in historical returns; it does not model trading fees, taxes, slippage, currency conversion, or interest on idle cash, and example strategy signals are lagged one day (no look-ahead)
 - Not investment advice; for portfolio demonstration and education only
 
 ## License

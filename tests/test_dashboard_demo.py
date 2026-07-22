@@ -66,12 +66,17 @@ def test_parquet_marts_match_return_volatility_and_drawdown_definitions(monkeypa
     assert (risk[risk["ticker"] == "FLAT"]["drawdown"] == 0.0).all()
 
 
-def test_short_dataframes_use_content_width_without_widening_two_columns():
+def test_dataframes_use_content_width_instead_of_filling_chart_width():
     two_columns = pd.DataFrame({"ticker": ["SPY"], "return": [0.1]})
-    three_columns = two_columns.assign(as_of_date="2026-07-22")
+    wide_schema = two_columns.assign(
+        as_of_date="2026-07-22",
+        drawdown=-0.1,
+        volatility=0.2,
+        asset_class="equity",
+    )
 
     assert db.dataframe_width(two_columns) == "content"
-    assert db.dataframe_width(three_columns) == "stretch"
+    assert db.dataframe_width(wide_schema) == "content"
 
 
 def test_shared_plotly_layout_keeps_mobile_plot_area_for_the_chart():

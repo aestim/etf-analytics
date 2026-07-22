@@ -136,8 +136,20 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "🧪 투자 방법 비교",
     },
     "strategy.subtitle": {
-        "en": "See how five example strategies performed over the same historical period. Results exclude fees, taxes, and differences between expected and actual trade prices. Uninvested cash earns no interest. **For education only. Past results do not predict future performance.**",
-        "ko": "같은 과거 기간에 다섯 가지 투자 방법의 성과를 비교합니다. 수수료·세금·주문 가격과 실제 체결 가격의 차이는 반영하지 않고, 투자하지 않은 현금에는 이자가 붙지 않는다고 가정합니다. **학습용 비교이며 과거 성과가 미래 수익을 보장하지 않습니다.**",
+        "en": "Build your own ETF mix and compare one decision at a time, or explore five example strategies. **For education only. Past results do not predict future performance.**",
+        "ko": "직접 ETF와 비중을 정해 한 가지 투자 결정을 비교하거나, 다섯 가지 예시 전략을 살펴보세요. **학습용 비교이며 과거 성과가 미래 수익을 보장하지 않습니다.**",
+    },
+    "strategy.mode_label": {
+        "en": "Choose a view",
+        "ko": "무엇을 볼까요?",
+    },
+    "strategy.mode_custom": {
+        "en": "My portfolio simulation",
+        "ko": "내 포트폴리오 시뮬레이션",
+    },
+    "strategy.mode_examples": {
+        "en": "Five example strategies",
+        "ko": "예시 전략 5개 비교",
     },
     "strategy.guide_title": {
         "en": "👋 How to read the results",
@@ -260,6 +272,163 @@ COPY: dict[str, dict[Language, str]] = {
     "strategy.footer": {
         "en": "The calculation rules and assumptions are documented in `analytics/strategies.py`. TQQQ is leveraged and can suffer much larger losses than an unleveraged ETF.",
         "ko": "계산 규칙과 가정은 `analytics/strategies.py`에 있습니다. TQQQ는 레버리지 ETF이므로 일반 ETF보다 손실 폭이 매우 커질 수 있습니다.",
+    },
+    "simulation.intro": {
+        "en": "Choose up to five ETFs and set target weights. The comparison uses one starting budget, the same dates, fractional shares, and dividend-adjusted historical prices.",
+        "ko": "ETF를 최대 5개까지 고르고 목표 비중을 정하세요. 같은 총 투자금과 기간, 소수점 단위 매수, 배당 반영 과거 가격으로 비교합니다.",
+    },
+    "simulation.select_etfs": {
+        "en": "Choose ETFs (up to 5)",
+        "ko": "ETF 선택 (최대 5개)",
+    },
+    "simulation.equal_weights": {
+        "en": "Split equally",
+        "ko": "똑같이 나누기",
+    },
+    "simulation.weight_label": {
+        "en": "{ticker} weight (%)",
+        "ko": "{ticker} 비중 (%)",
+    },
+    "simulation.weight_total": {
+        "en": "Total weight: **{total:.1f}%**",
+        "ko": "비중 합계: **{total:.1f}%**",
+    },
+    "simulation.weight_valid": {
+        "en": "The weights add up to 100%.",
+        "ko": "비중 합계가 100%입니다.",
+    },
+    "simulation.weight_invalid": {
+        "en": "Adjust the weights to exactly 100% to see results.",
+        "ko": "결과를 보려면 비중 합계를 정확히 100%로 맞춰주세요.",
+    },
+    "simulation.total_amount": {
+        "en": "Total simulation amount ({unit})",
+        "ko": "총 투자금 ({unit})",
+    },
+    "simulation.amount_help": {
+        "en": "Both alternatives start with the same available budget.",
+        "ko": "두 비교 대상 모두 처음부터 같은 총 투자금을 가지고 시작합니다.",
+    },
+    "simulation.start_date": {
+        "en": "Requested start date",
+        "ko": "투자 시작일",
+    },
+    "simulation.actual_period": {
+        "en": "Actual comparison period: **{start} to {end}**",
+        "ko": "실제 비교 기간: **{start} ~ {end}**",
+    },
+    "simulation.compare_label": {
+        "en": "What do you want to compare?",
+        "ko": "무엇을 비교할까요?",
+    },
+    "simulation.compare_timing": {
+        "en": "Invest all at once vs spread out purchases",
+        "ko": "한 번에 투자 vs 나눠서 투자",
+    },
+    "simulation.compare_rebalance": {
+        "en": "No rebalancing vs yearly rebalancing",
+        "ko": "리밸런싱 안 함 vs 매년 리밸런싱",
+    },
+    "simulation.staged_months": {
+        "en": "Months used to spread out purchases",
+        "ko": "나눠서 투자할 기간",
+    },
+    "simulation.month_option": {
+        "en": "{months} months",
+        "ko": "{months}개월",
+    },
+    "simulation.lump_name": {
+        "en": "Invest all at once",
+        "ko": "한 번에 투자",
+    },
+    "simulation.staged_name": {
+        "en": "Spread over {months} months",
+        "ko": "{months}개월 나눠 투자",
+    },
+    "simulation.no_rebalance_name": {
+        "en": "No rebalancing",
+        "ko": "리밸런싱 안 함",
+    },
+    "simulation.annual_rebalance_name": {
+        "en": "Rebalance yearly",
+        "ko": "매년 리밸런싱",
+    },
+    "simulation.results": {
+        "en": "Your comparison",
+        "ko": "내 비교 결과",
+    },
+    "simulation.summary_higher": {
+        "en": "Over this period, **{higher}** finished {amount} higher than **{lower}**.",
+        "ko": "이 기간에는 **{higher}**의 최종 금액이 **{lower}**보다 {amount} 높았습니다.",
+    },
+    "simulation.summary_equal": {
+        "en": "The two alternatives finished at almost the same value over this period.",
+        "ko": "이 기간에는 두 방법의 최종 금액이 거의 같았습니다.",
+    },
+    "simulation.summary_drop": {
+        "en": "The smaller historical drop was **{name}** at {drawdown}.",
+        "ko": "투자 중 가장 큰 하락 폭이 더 작았던 방법은 **{name}**({drawdown})이었습니다.",
+    },
+    "simulation.value_chart": {
+        "en": "Account value over time",
+        "ko": "투자금 변화",
+    },
+    "simulation.metric": {"en": "Metric", "ko": "항목"},
+    "simulation.value": {"en": "Value", "ko": "값"},
+    "simulation.final_value": {"en": "Final value", "ko": "최종 금액"},
+    "simulation.profit": {"en": "Gain or loss", "ko": "번 돈 또는 잃은 돈"},
+    "simulation.total_return": {"en": "Total return", "ko": "총수익률"},
+    "simulation.max_drawdown": {
+        "en": "Largest drop",
+        "ko": "최대 하락",
+    },
+    "simulation.annualized_vol": {
+        "en": "Annualized price swings",
+        "ko": "연환산 가격 변동",
+    },
+    "simulation.insufficient_history": {
+        "en": "There is not enough common price history for this selection and deployment period. Choose an earlier start date, fewer months, or different ETFs.",
+        "ko": "선택한 ETF와 분할 기간에 필요한 공통 가격 데이터가 부족합니다. 시작일을 앞당기거나 기간 또는 ETF를 바꿔주세요.",
+    },
+    "simulation.leverage_warning": {
+        "en": "Leveraged ETF selected: {tickers}. Daily leverage can create much larger losses, and long-term returns will not be an exact multiple of the index.",
+        "ko": "레버리지 ETF가 포함됐습니다: {tickers}. 일간 수익을 확대하므로 손실도 훨씬 커질 수 있고, 장기 수익률은 지수의 정확한 배수가 아닙니다.",
+    },
+    "simulation.reference_toggle": {
+        "en": "Compare my setup with the five examples",
+        "ko": "내 설정을 예시 전략 5개와 비교",
+    },
+    "simulation.reference_title": {
+        "en": "Reference comparison",
+        "ko": "예시 전략과 참고 비교",
+    },
+    "simulation.reference_caption": {
+        "en": "The examples use different ETFs as well as different rules, so the differences do not measure the investment rule alone. All available results below use the same budget and dates.",
+        "ko": "예시 전략은 투자 방법뿐 아니라 사용하는 ETF도 다릅니다. 아래 차이를 투자 방법만의 효과로 해석하면 안 되며, 가능한 결과는 모두 같은 투자금과 기간을 사용합니다.",
+    },
+    "simulation.reference_select": {
+        "en": "Add up to two examples to the chart",
+        "ko": "차트에 추가할 예시 전략 (최대 2개)",
+    },
+    "simulation.reference_unavailable": {
+        "en": "The five examples cannot use this entire period because required ETF history is missing.",
+        "ko": "필요한 ETF의 과거 데이터가 없어 선택한 전체 기간으로 예시 전략 5개를 비교할 수 없습니다.",
+    },
+    "simulation.my_staged": {
+        "en": "My portfolio · {months}-month staged entry",
+        "ko": "내 포트폴리오 · {months}개월 분할",
+    },
+    "simulation.my_rebalanced": {
+        "en": "My portfolio · yearly rebalancing",
+        "ko": "내 포트폴리오 · 매년 리밸런싱",
+    },
+    "simulation.assumptions_title": {
+        "en": "Calculation assumptions",
+        "ko": "계산에 사용한 가정",
+    },
+    "simulation.assumptions_body": {
+        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits.\n- Fractional shares are allowed and idle cash earns 0%.\n- Trading fees, taxes, slippage, and currency movements are excluded.\n- This is a historical educational simulation, not a forecast or recommendation.",
+        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있습니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 거래 수수료, 세금, 매수·매도 가격 차이, 환율 변동은 제외합니다.\n- 과거 데이터를 이용한 학습용 시뮬레이션이며 미래 예측이나 투자 추천이 아닙니다.",
     },
     "ask.title": {"en": "💬 Ask About ETFs", "ko": "💬 ETF 정보 물어보기"},
     "ask.subtitle": {

@@ -54,9 +54,13 @@ DATAFRAME_ROW_HEIGHT = 38
 
 
 def dataframe_width(df: pd.DataFrame) -> str:
-    """Keep short result tables compact; use the container for wider schemas."""
+    """Size tables from their columns instead of filling the chart container.
 
-    return "content" if len(df.columns) <= 2 else "stretch"
+    Streamlit still constrains content-width dataframes to the available mobile
+    viewport and provides horizontal scrolling when a schema is genuinely wide.
+    """
+
+    return "content"
 
 GLOSSARIES: dict[Language, dict[str, str]] = {
     "en": {
