@@ -170,6 +170,75 @@ def annually_rebalanced_portfolio(
     )
 
 
+def portfolio_strategy(
+    prices: pd.DataFrame,
+    weights: dict[str, float],
+    total_capital: float,
+    deployment_months: int = 1,
+    rebalance_annually: bool = False,
+) -> SimulationResult:
+    """Run independently selectable entry timing and yearly rebalancing.
+
+    Undeployed cash stays reserved during staged entry.  A yearly rebalance
+    only redistributes the amount already invested, so it never deploys that
+    reserved cash earlier than the selected purchase schedule.
+    """
+    clean, target = _prepare(prices, weights, total_capital)
+    if deployment_months <= 0:
+        raise ValueError("deployment_months must be positive")
+
+    month_periods = clean.index.to_period("M")
+    available_dates = clean.index[~month_periods.duplicated()]
+    if len(available_dates) < deployment_months:
+        raise ValueError("not enough monthly observations for the deployment period")
+    buy_dates = available_dates[:deployment_months]
+    buy_set = set(buy_dates)
+
+    shares = pd.Series(0.0, index=target.index)
+    remaining_cash = float(total_capital)
+    installment = total_capital / deployment_months
+    values: list[float] = []
+    cash_values: list[float] = []
+    invested_values: list[float] = []
+    buy_number = 0
+    rebalance_count = 0
+    previous_year = clean.index[0].year
+
+    for date, row in clean.iterrows():
+        if date in buy_set:
+            buy_number += 1
+            amount = (
+                remaining_cash
+                if buy_number == deployment_months
+                else installment
+            )
+            shares += amount * target / row
+            remaining_cash = max(0.0, remaining_cash - amount)
+
+        if (
+            rebalance_annually
+            and date.year != previous_year
+            and float((shares * row).sum()) > 0
+        ):
+            invested_value = float((shares * row).sum())
+            shares = invested_value * target / row
+            rebalance_count += 1
+
+        previous_year = date.year
+        values.append(float(remaining_cash + (shares * row).sum()))
+        cash_values.append(remaining_cash)
+        invested_values.append(total_capital - remaining_cash)
+
+    return SimulationResult(
+        value=pd.Series(values, index=clean.index, name="value"),
+        cash=pd.Series(cash_values, index=clean.index, name="cash"),
+        invested=pd.Series(invested_values, index=clean.index, name="invested"),
+        event_count=buy_number + rebalance_count,
+        deployment_end=buy_dates[-1],
+        final_weights=_final_weights(clean.iloc[-1], shares),
+    )
+
+
 def result_metrics(result: SimulationResult) -> dict[str, float]:
     """Beginner-facing account metrics based on the full value path."""
     value = result.value.dropna()
@@ -189,4 +258,3 @@ def result_metrics(result: SimulationResult) -> dict[str, float]:
         "max_drawdown": float(drawdown.min()),
         "annualized_vol": annualized_vol,
     }
-

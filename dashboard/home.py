@@ -119,19 +119,26 @@ with st.expander(tr("home.ticker_guide", lang)):
             row_height=DATAFRAME_ROW_HEIGHT,
             hide_index=True,
             column_config={
-                "ticker": st.column_config.TextColumn(tr("home.ticker", lang)),
-                "name": st.column_config.TextColumn(tr("home.fund_name", lang)),
+                "ticker": st.column_config.TextColumn(
+                    tr("home.ticker", lang), alignment="left"
+                ),
+                "name": st.column_config.TextColumn(
+                    tr("home.fund_name", lang), alignment="left"
+                ),
                 "asset_class": st.column_config.TextColumn(
                     tr("home.asset_class", lang),
                     help=tr("home.asset_class_help", lang),
+                    alignment="left",
                 ),
                 "sub_class": st.column_config.TextColumn(
                     tr("home.sub_class", lang),
                     help=tr("home.sub_class_help", lang),
+                    alignment="left",
                 ),
                 "leverage": st.column_config.NumberColumn(
                     tr("home.leverage", lang),
                     help=tr("home.leverage_help", lang),
+                    alignment="right",
                 ),
             },
         )
@@ -219,14 +226,20 @@ st.dataframe(
             tr("home.volatility", lang),
             help=glossary_help("rolling_vol_30d", lang),
             format="percent",
+            alignment="right",
         ),
         "drawdown": st.column_config.NumberColumn(
             tr("home.drawdown", lang),
             help=glossary_help("drawdown", lang),
             format="percent",
+            alignment="right",
         ),
-        "ticker": st.column_config.TextColumn(tr("home.ticker", lang)),
-        "price_date": st.column_config.TextColumn(tr("home.as_of_date", lang)),
+        "ticker": st.column_config.TextColumn(
+            tr("home.ticker", lang), alignment="left"
+        ),
+        "price_date": st.column_config.TextColumn(
+            tr("home.as_of_date", lang), alignment="left"
+        ),
     },
 )
 

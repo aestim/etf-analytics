@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,17 @@ from i18n import current_language, tr  # noqa: E402
 REQUIRED_EXAMPLES = {"SPY", "QQQ", "BND", "TQQQ"}
 DEFAULT_TICKERS = ["SPY", "BND", "GLD"]
 DEFAULT_WEIGHTS = {"SPY": 60.0, "BND": 30.0, "GLD": 10.0}
+
+
+@dataclass(frozen=True)
+class PortfolioPlan:
+    """One user-configured portfolio and its execution rules."""
+
+    name: str
+    tickers: tuple[str, ...]
+    weights: dict[str, float]
+    deployment_months: int
+    rebalance_annually: bool
 
 
 def _money(value: float, lang: str) -> str:
@@ -193,10 +205,10 @@ def _render_result_tables(
             key=table_key,
             column_config={
                 metric_column: st.column_config.TextColumn(
-                    metric_column, width=145
+                    metric_column, width=145, alignment="left"
                 ),
                 value_column: st.column_config.TextColumn(
-                    value_column, width=195
+                    value_column, width=195, alignment="right"
                 ),
             },
         )
@@ -212,83 +224,176 @@ def _example_labels(lang: str) -> dict[str, str]:
     }
 
 
+def _allocation_inputs(
+    options: list[str],
+    lang: str,
+    prefix: str,
+    defaults: list[str],
+    default_weights: dict[str, float],
+) -> tuple[list[str], dict[str, float]] | None:
+    selected = st.multiselect(
+        tr("simulation.select_etfs", lang),
+        options=options,
+        default=defaults,
+        max_selections=5,
+        key=f"{prefix}_tickers",
+    )
+    if not selected:
+        st.info(tr("home.empty_selection", lang))
+        return None
+
+    for ticker in selected:
+        state_key = f"{prefix}_weight_{ticker}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = default_weights.get(
+                ticker, 100.0 / len(selected)
+            )
+
+    if st.button(tr("simulation.equal_weights", lang), key=f"{prefix}_equal"):
+        equal = round(100.0 / len(selected), 1)
+        assigned = 0.0
+        for ticker in selected[:-1]:
+            st.session_state[f"{prefix}_weight_{ticker}"] = equal
+            assigned += equal
+        st.session_state[f"{prefix}_weight_{selected[-1]}"] = round(
+            100.0 - assigned, 1
+        )
+
+    percentages = {
+        ticker: st.number_input(
+            tr("simulation.weight_label", lang, ticker=ticker),
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            format="%.1f",
+            key=f"{prefix}_weight_{ticker}",
+        )
+        for ticker in selected
+    }
+    total = sum(percentages.values())
+    st.markdown(tr("simulation.weight_total", lang, total=total))
+    if not np.isclose(total, 100.0, atol=1e-6) or any(
+        value <= 0 for value in percentages.values()
+    ):
+        st.warning(tr("simulation.weight_invalid", lang))
+        return None
+    st.caption(f"✅ {tr('simulation.weight_valid', lang)}")
+    return selected, {
+        ticker: percentage / 100.0
+        for ticker, percentage in percentages.items()
+    }
+
+
+def _plan_inputs(prefix: str, lang: str) -> tuple[int, bool]:
+    method = st.segmented_control(
+        tr("simulation.plan_method", lang),
+        options=["lump", "staged"],
+        default="lump",
+        required=True,
+        format_func=lambda value: tr(f"simulation.plan_{value}", lang),
+        key=f"{prefix}_method",
+    )
+    months = 1
+    if method == "staged":
+        months = st.selectbox(
+            tr("simulation.staged_months", lang),
+            options=[6, 12, 24],
+            index=1,
+            format_func=lambda value: tr(
+                "simulation.month_option", lang, months=value
+            ),
+            key=f"{prefix}_months",
+        )
+    rebalance = st.toggle(
+        tr("simulation.plan_rebalance", lang),
+        help=tr("simulation.plan_rebalance_help", lang),
+        key=f"{prefix}_rebalance",
+    )
+    return months, rebalance
+
+
+def _plan_summary(plan: PortfolioPlan, lang: str) -> str:
+    entry = (
+        tr("simulation.plan_lump", lang)
+        if plan.deployment_months == 1
+        else tr(
+            "simulation.plan_staged_summary",
+            lang,
+            months=plan.deployment_months,
+        )
+    )
+    rebalance = tr(
+        "simulation.plan_yearly" if plan.rebalance_annually else "simulation.plan_hold",
+        lang,
+    )
+    return tr(
+        "simulation.plan_summary",
+        lang,
+        name=plan.name,
+        entry=entry,
+        rebalance=rebalance,
+    )
+
+
 def _reference_curves(
     all_prices: pd.DataFrame,
-    selected: list[str],
-    weights: dict[str, float],
+    plans: list[PortfolioPlan],
     total_capital: float,
     start: pd.Timestamp,
     end: pd.Timestamp,
-    comparison: str,
-    staged_months: int,
 ) -> tuple[dict[str, pd.Series], pd.DatetimeIndex] | None:
-    columns = sorted(REQUIRED_EXAMPLES | set(selected))
+    custom_tickers = {ticker for plan in plans for ticker in plan.tickers}
+    columns = sorted(REQUIRED_EXAMPLES | custom_tickers)
     if set(columns) - set(all_prices.columns):
         return None
     common = all_prices.loc[start:end, columns].dropna()
     if common.empty or common.index[0] != start or common.index[-1] != end:
         return None
-    if len(common) < 201:
-        return None
 
-    custom_prices = common[selected]
-    if comparison == "timing":
-        custom = sim.staged_portfolio(
-            custom_prices,
-            weights,
-            total_capital,
-            staged_months,
-        ).value
-    else:
-        custom = sim.annually_rebalanced_portfolio(
-            custom_prices,
-            weights,
-            total_capital,
-        ).value
-
-    all_months = len(common.index.to_period("M").unique())
-    dca = sim.staged_portfolio(
-        common[["QQQ"]],
-        {"QQQ": 1.0},
-        total_capital,
-        all_months,
-    ).value
     curves = {
-        "custom": custom,
-        "buy_hold": total_capital * strat.lump_sum(common["SPY"]),
-        "dca": dca,
-        "balanced": total_capital
-        * strat.rebalance(common, {"SPY": 0.6, "BND": 0.4}, every=63),
-        "trend": total_capital * strat.sma_trend(common["QQQ"], window=200),
-        "split": total_capital
-        * strat.infinite_buy(common["TQQQ"], n_splits=40, take_profit=0.10),
+        f"custom_{index}": sim.portfolio_strategy(
+            common[list(plan.tickers)],
+            plan.weights,
+            total_capital,
+            deployment_months=plan.deployment_months,
+            rebalance_annually=plan.rebalance_annually,
+        ).value
+        for index, plan in enumerate(plans)
     }
+    all_months = len(common.index.to_period("M").unique())
+    curves.update(
+        {
+            "buy_hold": total_capital * strat.lump_sum(common["SPY"]),
+            "dca": sim.staged_portfolio(
+                common[["QQQ"]],
+                {"QQQ": 1.0},
+                total_capital,
+                all_months,
+            ).value,
+            "balanced": total_capital
+            * strat.rebalance(common, {"SPY": 0.6, "BND": 0.4}, every=63),
+            "trend": total_capital
+            * strat.sma_trend(common["QQQ"], window=200),
+            "split": total_capital
+            * strat.infinite_buy(common["TQQQ"], n_splits=40, take_profit=0.10),
+        }
+    )
     return curves, common.index
 
 
 def _render_reference_comparison(
     all_prices: pd.DataFrame,
-    selected: list[str],
-    weights: dict[str, float],
+    plans: list[PortfolioPlan],
     total_capital: float,
     start: pd.Timestamp,
     end: pd.Timestamp,
-    comparison: str,
-    staged_months: int,
     lang: str,
 ) -> None:
     st.subheader(tr("simulation.reference_title", lang))
     st.caption(tr("simulation.reference_caption", lang))
     try:
         built = _reference_curves(
-            all_prices,
-            selected,
-            weights,
-            total_capital,
-            start,
-            end,
-            comparison,
-            staged_months,
+            all_prices, plans, total_capital, start, end
         )
     except ValueError:
         built = None
@@ -297,26 +402,20 @@ def _render_reference_comparison(
         return
 
     curves, index = built
-    labels = _example_labels(lang)
-    custom_label = (
-        tr("simulation.my_staged", lang, months=staged_months)
-        if comparison == "timing"
-        else tr("simulation.my_rebalanced", lang)
-    )
-    labels = {"custom": custom_label, **labels}
-
+    labels = {
+        **{f"custom_{i}": plan.name for i, plan in enumerate(plans)},
+        **_example_labels(lang),
+    }
     rule_column = tr("strategy.rule", lang)
     final_value_column = tr("simulation.final_value", lang)
-    drawdown_column = tr("simulation.max_drawdown", lang)
+    drawdown_column = tr("simulation.drop_short", lang)
     rows = []
     for key, curve in curves.items():
         metrics = _curve_metrics(curve)
         rows.append(
             {
                 rule_column: labels[key],
-                final_value_column: _compact_money(
-                    metrics["final_value"], lang
-                ),
+                final_value_column: _compact_money(metrics["final_value"], lang),
                 drawdown_column: _percent(metrics["max_drawdown"]),
             }
         )
@@ -336,30 +435,60 @@ def _render_reference_comparison(
         hide_index=True,
         key=(
             f"simulation_reference_table_{lang}_{total_capital:g}_"
-            f"{start:%Y%m%d}_{end:%Y%m%d}_{comparison}_{staged_months}"
+            f"{start:%Y%m%d}_{end:%Y%m%d}_{len(plans)}"
         ),
         column_config={
-            rule_column: st.column_config.TextColumn(rule_column, width=170),
+            rule_column: st.column_config.TextColumn(
+                rule_column, width=170, alignment="left"
+            ),
             final_value_column: st.column_config.TextColumn(
-                final_value_column, width=100
+                final_value_column, width=100, alignment="right"
             ),
             drawdown_column: st.column_config.TextColumn(
-                drawdown_column, width=85
+                drawdown_column, width=85, alignment="right"
             ),
         },
     )
 
+    example_labels = _example_labels(lang)
     selected_examples = st.multiselect(
         tr("simulation.reference_select", lang),
-        options=list(_example_labels(lang)),
+        options=list(example_labels),
         default=["buy_hold"],
-        max_selections=2,
+        max_selections=3,
         format_func=lambda key: labels[key],
-        key="simulation_reference_examples",
+        key=f"simulation_reference_examples_{lang}",
     )
-    chart_curves = {custom_label: curves["custom"]}
+    chart_curves = {
+        plan.name: curves[f"custom_{index}"]
+        for index, plan in enumerate(plans)
+    }
     chart_curves.update({labels[key]: curves[key] for key in selected_examples})
     st.plotly_chart(_value_chart(chart_curves, lang), width="stretch")
+
+
+def _render_leverage_warning(
+    plans: list[PortfolioPlan], dim_etf: pd.DataFrame, lang: str
+) -> None:
+    if dim_etf.empty or "leverage" not in dim_etf:
+        return
+    leverage = dim_etf.set_index("ticker")["leverage"]
+    leveraged = sorted(
+        {
+            ticker
+            for plan in plans
+            for ticker in plan.tickers
+            if ticker in leverage.index and float(leverage[ticker]) > 1
+        }
+    )
+    if leveraged:
+        st.warning(
+            tr(
+                "simulation.leverage_warning",
+                lang,
+                tickers=", ".join(leveraged),
+            )
+        )
 
 
 def _render_custom_simulator(
@@ -370,70 +499,14 @@ def _render_custom_simulator(
     st.markdown(tr("simulation.intro", lang))
     options = sorted(all_prices.columns)
     defaults = [ticker for ticker in DEFAULT_TICKERS if ticker in options]
-    selected = st.multiselect(
-        tr("simulation.select_etfs", lang),
-        options=options,
-        default=defaults,
-        max_selections=5,
-        key="simulation_tickers",
+
+    st.subheader(tr("simulation.primary_title", lang))
+    primary_allocation = _allocation_inputs(
+        options, lang, "simulation", defaults, DEFAULT_WEIGHTS
     )
-    if not selected:
-        st.info(tr("home.empty_selection", lang))
+    if primary_allocation is None:
         return
-
-    for ticker in selected:
-        state_key = f"simulation_weight_{ticker}"
-        if state_key not in st.session_state:
-            st.session_state[state_key] = DEFAULT_WEIGHTS.get(
-                ticker, 100.0 / len(selected)
-            )
-
-    if st.button(tr("simulation.equal_weights", lang), key="simulation_equal"):
-        equal = round(100.0 / len(selected), 1)
-        assigned = 0.0
-        for ticker in selected[:-1]:
-            st.session_state[f"simulation_weight_{ticker}"] = equal
-            assigned += equal
-        st.session_state[f"simulation_weight_{selected[-1]}"] = round(
-            100.0 - assigned, 1
-        )
-
-    weight_percent: dict[str, float] = {}
-    for ticker in selected:
-        weight_percent[ticker] = st.number_input(
-            tr("simulation.weight_label", lang, ticker=ticker),
-            min_value=0.0,
-            max_value=100.0,
-            step=1.0,
-            format="%.1f",
-            key=f"simulation_weight_{ticker}",
-        )
-    weight_total = sum(weight_percent.values())
-    st.markdown(tr("simulation.weight_total", lang, total=weight_total))
-    valid_weights = np.isclose(weight_total, 100.0, atol=1e-6) and all(
-        weight > 0 for weight in weight_percent.values()
-    )
-    if valid_weights:
-        st.caption(f"✅ {tr('simulation.weight_valid', lang)}")
-    else:
-        st.warning(tr("simulation.weight_invalid", lang))
-        return
-
-    if not dim_etf.empty and "leverage" in dim_etf:
-        leverage = dim_etf.set_index("ticker")["leverage"]
-        leveraged = [
-            ticker
-            for ticker in selected
-            if ticker in leverage.index and float(leverage[ticker]) > 1
-        ]
-        if leveraged:
-            st.warning(
-                tr(
-                    "simulation.leverage_warning",
-                    lang,
-                    tickers=", ".join(leveraged),
-                )
-            )
+    primary_tickers, primary_weights = primary_allocation
 
     unit = "만원" if lang == "ko" else "USD"
     amount_default = 1_000.0 if lang == "ko" else 10_000.0
@@ -447,74 +520,111 @@ def _render_custom_simulator(
         key=f"simulation_total_{lang}",
     )
 
-    common_prices = all_prices[selected].dropna()
-    if len(common_prices) < 2:
+    primary_prices = all_prices[primary_tickers].dropna()
+    if len(primary_prices) < 2:
         st.warning(tr("simulation.insufficient_history", lang))
         return
-    latest = common_prices.index.max()
+    latest = primary_prices.index.max()
     desired = latest - pd.DateOffset(years=5)
-    default_pos = common_prices.index.searchsorted(desired)
-    default_pos = min(default_pos, len(common_prices) - 2)
-    default_start = common_prices.index[default_pos].date()
-    selection_key = "_".join(selected)
+    default_pos = min(
+        primary_prices.index.searchsorted(desired), len(primary_prices) - 2
+    )
     requested_start = st.date_input(
         tr("simulation.start_date", lang),
-        value=default_start,
-        min_value=common_prices.index.min().date(),
-        max_value=common_prices.index[-2].date(),
-        key=f"simulation_start_{selection_key}",
+        value=primary_prices.index[default_pos].date(),
+        min_value=primary_prices.index.min().date(),
+        max_value=primary_prices.index[-2].date(),
+        key=f"simulation_start_{'_'.join(primary_tickers)}",
     )
-    simulation_prices = common_prices.loc[pd.Timestamp(requested_start) :]
 
-    comparison = st.radio(
-        tr("simulation.compare_label", lang),
-        options=["timing", "rebalance"],
-        format_func=lambda value: tr(f"simulation.compare_{value}", lang),
-        key="simulation_comparison",
-    )
-    staged_months = 12
-    if comparison == "timing":
-        staged_months = st.selectbox(
-            tr("simulation.staged_months", lang),
-            options=[6, 12, 24],
-            index=1,
-            format_func=lambda months: tr(
-                "simulation.month_option", lang, months=months
-            ),
-            key="simulation_staged_months",
+    st.markdown(f"#### {tr('simulation.plan_title', lang)}")
+    primary_months, primary_rebalance = _plan_inputs("simulation", lang)
+    plans = [
+        PortfolioPlan(
+            name=tr("simulation.my_strategy", lang),
+            tickers=tuple(primary_tickers),
+            weights=primary_weights,
+            deployment_months=primary_months,
+            rebalance_annually=primary_rebalance,
         )
+    ]
 
-    weights = {ticker: value / 100.0 for ticker, value in weight_percent.items()}
+    if not st.session_state.get("simulation_second_enabled", False):
+        if st.button(
+            tr("simulation.add_second", lang), key="simulation_add_second"
+        ):
+            st.session_state["simulation_second_enabled"] = True
+            st.rerun()
+    else:
+        st.divider()
+        st.subheader(tr("simulation.second_title", lang))
+        st.caption(tr("simulation.second_caption", lang))
+        second_name = st.text_input(
+            tr("simulation.second_name", lang),
+            value=tr("simulation.second_default", lang),
+            max_chars=30,
+            key="simulation_second_name",
+        ).strip() or tr("simulation.second_default", lang)
+        if second_name == plans[0].name:
+            st.warning(tr("simulation.second_name_duplicate", lang))
+            return
+        second_allocation = _allocation_inputs(
+            options,
+            lang,
+            "simulation_second",
+            primary_tickers,
+            {ticker: weight * 100 for ticker, weight in primary_weights.items()},
+        )
+        if second_allocation is None:
+            return
+        second_tickers, second_weights = second_allocation
+        second_months, second_rebalance = _plan_inputs(
+            "simulation_second", lang
+        )
+        plans.append(
+            PortfolioPlan(
+                name=second_name,
+                tickers=tuple(second_tickers),
+                weights=second_weights,
+                deployment_months=second_months,
+                rebalance_annually=second_rebalance,
+            )
+        )
+        if st.button(
+            tr("simulation.remove_second", lang),
+            key="simulation_remove_second",
+        ):
+            st.session_state["simulation_second_enabled"] = False
+            st.rerun()
+
+    _render_leverage_warning(plans, dim_etf, lang)
+    combined_tickers = sorted(
+        {ticker for plan in plans for ticker in plan.tickers}
+    )
+    simulation_prices = all_prices[combined_tickers].dropna().loc[
+        pd.Timestamp(requested_start) :
+    ]
     try:
-        lump = sim.lump_sum_portfolio(simulation_prices, weights, total_capital)
-        if comparison == "timing":
-            alternative = sim.staged_portfolio(
-                simulation_prices,
-                weights,
+        results = {
+            plan.name: sim.portfolio_strategy(
+                simulation_prices[list(plan.tickers)],
+                plan.weights,
                 total_capital,
-                staged_months,
+                deployment_months=plan.deployment_months,
+                rebalance_annually=plan.rebalance_annually,
             )
-            labels = [
-                tr("simulation.lump_name", lang),
-                tr("simulation.staged_name", lang, months=staged_months),
-            ]
-        else:
-            alternative = sim.annually_rebalanced_portfolio(
-                simulation_prices,
-                weights,
-                total_capital,
-            )
-            labels = [
-                tr("simulation.no_rebalance_name", lang),
-                tr("simulation.annual_rebalance_name", lang),
-            ]
+            for plan in plans
+        }
     except ValueError:
         st.warning(tr("simulation.insufficient_history", lang))
         return
 
-    results = {labels[0]: lump, labels[1]: alternative}
-    metrics = {name: sim.result_metrics(result) for name, result in results.items()}
-    start, end = lump.value.index.min(), lump.value.index.max()
+    labels = list(results)
+    metrics = {
+        name: sim.result_metrics(result) for name, result in results.items()
+    }
+    start = next(iter(results.values())).value.index.min()
+    end = next(iter(results.values())).value.index.max()
 
     st.subheader(tr("simulation.results", lang))
     st.markdown(
@@ -525,31 +635,15 @@ def _render_custom_simulator(
             end=f"{end:%Y-%m-%d}",
         )
     )
-    _comparison_summary(labels, metrics, lang)
-
-    st.markdown(f"#### {tr('simulation.value_chart', lang)}")
-    st.plotly_chart(
-        _value_chart({name: result.value for name, result in results.items()}, lang),
-        width="stretch",
-    )
-
+    for plan in plans:
+        st.caption(_plan_summary(plan, lang))
+    if len(labels) == 2:
+        _comparison_summary(labels, metrics, lang)
     _render_result_tables(labels, metrics, lang)
 
-    if st.checkbox(
-        tr("simulation.reference_toggle", lang),
-        key="simulation_show_references",
-    ):
-        _render_reference_comparison(
-            all_prices,
-            selected,
-            weights,
-            total_capital,
-            start,
-            end,
-            comparison,
-            staged_months,
-            lang,
-        )
+    _render_reference_comparison(
+        all_prices, plans, total_capital, start, end, lang
+    )
 
     with st.expander(tr("simulation.assumptions_title", lang)):
         st.markdown(tr("simulation.assumptions_body", lang))
@@ -671,7 +765,11 @@ def _render_example_strategies(prices: pd.DataFrame, lang: str) -> None:
         width=dataframe_width(display),
         row_height=DATAFRAME_ROW_HEIGHT,
         column_config={
-            label: st.column_config.TextColumn(label, help=glossary_help(key, lang))
+            label: st.column_config.TextColumn(
+                label,
+                help=glossary_help(key, lang),
+                alignment="right",
+            )
             for key, label in metric_labels.items()
         },
     )

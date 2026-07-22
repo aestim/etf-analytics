@@ -172,7 +172,9 @@ def show_assistant(entry: dict, key: str) -> None:
         table_columns = {
             column: (
                 st.column_config.NumberColumn(
-                    display_column_label(column, question), format="percent"
+                    display_column_label(column, question),
+                    format="percent",
+                    alignment="right",
                 )
                 if is_percent_metric(column)
                 else st.column_config.Column(display_column_label(column, question))

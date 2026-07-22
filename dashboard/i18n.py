@@ -136,8 +136,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "🧪 투자 방법 비교",
     },
     "strategy.subtitle": {
-        "en": "Build your own ETF mix and compare one decision at a time, or explore five example strategies. **For education only. Past results do not predict future performance.**",
-        "ko": "직접 ETF와 비중을 정해 한 가지 투자 결정을 비교하거나, 다섯 가지 예시 전략을 살펴보세요. **학습용 비교이며 과거 성과가 미래 수익을 보장하지 않습니다.**",
+        "en": "Choose how to invest and rebalance your ETF mix, then compare it with another custom strategy and five examples. **For education only. Past results do not predict future performance.**",
+        "ko": "ETF 비중과 투자 시점, 리밸런싱 여부를 정한 뒤 다른 내 전략과 예시 전략 5개를 비교하세요. **학습용 비교이며 과거 성과가 미래 수익을 보장하지 않습니다.**",
     },
     "strategy.mode_label": {
         "en": "Choose a view",
@@ -148,8 +148,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "내 포트폴리오 시뮬레이션",
     },
     "strategy.mode_examples": {
-        "en": "Five example strategies",
-        "ko": "예시 전략 5개 비교",
+        "en": "Detailed view of five examples",
+        "ko": "예시 전략 5개 자세히",
     },
     "strategy.guide_title": {
         "en": "👋 How to read the results",
@@ -274,8 +274,84 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "계산 규칙과 가정은 `analytics/strategies.py`에 있습니다. TQQQ는 레버리지 ETF이므로 일반 ETF보다 손실 폭이 매우 커질 수 있습니다.",
     },
     "simulation.intro": {
-        "en": "Choose up to five ETFs and set target weights. The comparison uses one starting budget, the same dates, fractional shares, and dividend-adjusted historical prices.",
-        "ko": "ETF를 최대 5개까지 고르고 목표 비중을 정하세요. 같은 총 투자금과 기간, 소수점 단위 매수, 배당 반영 과거 가격으로 비교합니다.",
+        "en": "Build one strategy by choosing ETFs, entry timing and rebalancing. The five examples appear automatically below, and you can add a second strategy of your own.",
+        "ko": "ETF와 투자 시점, 리밸런싱 여부를 골라 내 전략을 만드세요. 아래에서 예시 전략 5개를 바로 비교할 수 있고 내 전략을 하나 더 추가할 수도 있습니다.",
+    },
+    "simulation.primary_title": {
+        "en": "1. Build my strategy",
+        "ko": "1. 내 전략 만들기",
+    },
+    "simulation.plan_title": {
+        "en": "Investment method",
+        "ko": "투자 방법",
+    },
+    "simulation.plan_method": {
+        "en": "When should the money be invested?",
+        "ko": "투자금을 어떻게 넣을까요?",
+    },
+    "simulation.plan_lump": {
+        "en": "Invest all at once",
+        "ko": "한 번에 투자",
+    },
+    "simulation.plan_staged": {
+        "en": "Spread out purchases",
+        "ko": "나눠서 투자",
+    },
+    "simulation.plan_rebalance": {
+        "en": "Rebalance once a year",
+        "ko": "1년에 한 번 리밸런싱",
+    },
+    "simulation.plan_rebalance_help": {
+        "en": "At the first available trading date each year, restore the selected ETF weights. Money reserved for future staged purchases stays in cash.",
+        "ko": "매년 첫 거래일에 선택한 ETF 비중으로 되돌립니다. 나중에 나눠 투자할 예정인 현금은 미리 투자하지 않습니다.",
+    },
+    "simulation.plan_staged_summary": {
+        "en": "spread over {months} months",
+        "ko": "{months}개월 나눠 투자",
+    },
+    "simulation.plan_yearly": {
+        "en": "yearly rebalancing",
+        "ko": "매년 리밸런싱",
+    },
+    "simulation.plan_hold": {
+        "en": "no scheduled rebalancing",
+        "ko": "정기 리밸런싱 안 함",
+    },
+    "simulation.plan_summary": {
+        "en": "**{name}:** {entry} · {rebalance}",
+        "ko": "**{name}:** {entry} · {rebalance}",
+    },
+    "simulation.my_strategy": {
+        "en": "My strategy",
+        "ko": "내 전략",
+    },
+    "simulation.add_second": {
+        "en": "+ Add another strategy of my own",
+        "ko": "+ 내 전략 하나 더 추가",
+    },
+    "simulation.second_title": {
+        "en": "2. Add another strategy",
+        "ko": "2. 비교할 내 전략 추가",
+    },
+    "simulation.second_caption": {
+        "en": "It uses the same starting budget and dates, but can have different ETFs, weights and investment rules.",
+        "ko": "총 투자금과 기간은 같게 두고 ETF, 비중, 투자 방법은 다르게 정할 수 있습니다.",
+    },
+    "simulation.second_name": {
+        "en": "Strategy name",
+        "ko": "전략 이름",
+    },
+    "simulation.second_default": {
+        "en": "My strategy 2",
+        "ko": "내 전략 2",
+    },
+    "simulation.second_name_duplicate": {
+        "en": "Give the second strategy a different name.",
+        "ko": "두 번째 전략에는 다른 이름을 붙여주세요.",
+    },
+    "simulation.remove_second": {
+        "en": "Remove this strategy",
+        "ko": "이 전략 삭제",
     },
     "simulation.select_etfs": {
         "en": "Choose ETFs (up to 5)",
@@ -306,8 +382,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "총 투자금 ({unit})",
     },
     "simulation.amount_help": {
-        "en": "Both alternatives start with the same available budget.",
-        "ko": "두 비교 대상 모두 처음부터 같은 총 투자금을 가지고 시작합니다.",
+        "en": "Every strategy in the comparison starts with the same available budget.",
+        "ko": "비교하는 모든 전략은 같은 총 투자금을 가지고 시작합니다.",
     },
     "simulation.start_date": {
         "en": "Requested start date",
@@ -354,8 +430,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "매년 리밸런싱",
     },
     "simulation.results": {
-        "en": "Your comparison",
-        "ko": "내 비교 결과",
+        "en": "My strategy results",
+        "ko": "내 전략 결과",
     },
     "simulation.summary_higher": {
         "en": "Over this period, **{higher}** finished {amount} higher than **{lower}**.",
@@ -382,6 +458,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Worst drop",
         "ko": "최대 하락",
     },
+    "simulation.drop_short": {
+        "en": "Drop",
+        "ko": "하락률",
+    },
     "simulation.annualized_vol": {
         "en": "Annualized price swings",
         "ko": "연환산 가격 변동",
@@ -399,16 +479,16 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "내 설정을 예시 전략 5개와 비교",
     },
     "simulation.reference_title": {
-        "en": "Reference comparison",
-        "ko": "예시 전략과 참고 비교",
+        "en": "Compare strategies",
+        "ko": "전략 비교",
     },
     "simulation.reference_caption": {
-        "en": "The examples use different ETFs as well as different rules, so the differences do not measure the investment rule alone. All available results below use the same budget and dates.",
-        "ko": "예시 전략은 투자 방법뿐 아니라 사용하는 ETF도 다릅니다. 아래 차이를 투자 방법만의 효과로 해석하면 안 되며, 가능한 결과는 모두 같은 투자금과 기간을 사용합니다.",
+        "en": "Your strategy and all five examples are shown from the start. They use the same budget and dates, but the examples use different ETFs as well as different rules.",
+        "ko": "내 전략과 예시 전략 5개를 처음부터 모두 보여줍니다. 총 투자금과 기간은 같지만 예시는 사용하는 ETF와 투자 규칙이 모두 다를 수 있습니다.",
     },
     "simulation.reference_select": {
-        "en": "Add up to two examples to the chart",
-        "ko": "차트에 추가할 예시 전략 (최대 2개)",
+        "en": "Example lines to add to the chart (up to 3)",
+        "ko": "차트에 추가할 예시 전략 (최대 3개)",
     },
     "simulation.reference_unavailable": {
         "en": "The five examples cannot use this entire period because required ETF history is missing.",
@@ -427,8 +507,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "계산에 사용한 가정",
     },
     "simulation.assumptions_body": {
-        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits.\n- Fractional shares are allowed and idle cash earns 0%.\n- Trading fees, taxes, slippage, and currency movements are excluded.\n- This is a historical educational simulation, not a forecast or recommendation.",
-        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있습니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 거래 수수료, 세금, 매수·매도 가격 차이, 환율 변동은 제외합니다.\n- 과거 데이터를 이용한 학습용 시뮬레이션이며 미래 예측이나 투자 추천이 아닙니다.",
+        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits.\n- Fractional shares are allowed and idle cash earns 0%.\n- During staged entry, yearly rebalancing only adjusts money already invested; reserved cash follows the selected purchase schedule.\n- Trading fees, taxes, slippage, and currency movements are excluded.\n- This is a historical educational simulation, not a forecast or recommendation.",
+        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있습니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 나눠 투자하는 동안 리밸런싱은 이미 투자된 금액에만 적용하며, 남은 현금은 정한 매수 일정에 따라 투자합니다.\n- 거래 수수료, 세금, 매수·매도 가격 차이, 환율 변동은 제외합니다.\n- 과거 데이터를 이용한 학습용 시뮬레이션이며 미래 예측이나 투자 추천이 아닙니다.",
     },
     "ask.title": {"en": "💬 Ask About ETFs", "ko": "💬 ETF 정보 물어보기"},
     "ask.subtitle": {

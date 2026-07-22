@@ -7,6 +7,7 @@ import pytest
 from simulator import (
     annually_rebalanced_portfolio,
     lump_sum_portfolio,
+    portfolio_strategy,
     result_metrics,
     staged_portfolio,
 )
@@ -112,6 +113,74 @@ def test_annual_rebalancing_preserves_value_at_trade_time():
     assert result.value.iloc[-1] == pytest.approx(1_250)
 
 
+def test_configurable_strategy_matches_staged_entry_without_rebalancing():
+    prices = _prices(np.linspace(100, 140, 90), np.linspace(80, 70, 90))
+    weights = {"A": 0.7, "B": 0.3}
+
+    expected = staged_portfolio(prices, weights, 12_000, months=3)
+    actual = portfolio_strategy(
+        prices,
+        weights,
+        12_000,
+        deployment_months=3,
+        rebalance_annually=False,
+    )
+
+    assert actual.value.equals(expected.value)
+    assert actual.cash.equals(expected.cash)
+
+
+def test_configurable_strategy_matches_lump_sum_with_yearly_rebalancing():
+    index = pd.to_datetime(
+        ["2020-12-30", "2020-12-31", "2021-01-04", "2021-01-05"]
+    )
+    prices = pd.DataFrame(
+        {"A": [100.0, 150.0, 180.0, 170.0], "B": [100.0, 100.0, 90.0, 95.0]},
+        index=index,
+    )
+    weights = {"A": 0.6, "B": 0.4}
+
+    expected = annually_rebalanced_portfolio(prices, weights, 10_000)
+    actual = portfolio_strategy(
+        prices,
+        weights,
+        10_000,
+        deployment_months=1,
+        rebalance_annually=True,
+    )
+
+    assert actual.value.equals(expected.value)
+    assert actual.final_weights == pytest.approx(expected.final_weights)
+
+
+def test_staged_entry_keeps_reserved_cash_during_yearly_rebalance():
+    index = pd.to_datetime(
+        [
+            "2020-12-15",
+            "2020-12-31",
+            "2021-01-04",
+            "2021-02-01",
+            "2021-03-01",
+        ]
+    )
+    prices = pd.DataFrame(
+        {"A": [100.0, 150.0, 180.0, 170.0, 175.0], "B": [100.0] * 5},
+        index=index,
+    )
+
+    result = portfolio_strategy(
+        prices,
+        {"A": 0.5, "B": 0.5},
+        12_000,
+        deployment_months=4,
+        rebalance_annually=True,
+    )
+
+    assert result.cash.loc["2021-01-04"] == pytest.approx(6_000)
+    assert result.invested.loc["2021-01-04"] == pytest.approx(6_000)
+    assert result.cash.iloc[-1] == pytest.approx(0)
+
+
 @pytest.mark.parametrize(
     ("weights", "capital", "message"),
     [
@@ -134,4 +203,3 @@ def test_result_metrics_use_full_account_path():
     assert metrics["total_return"] == pytest.approx(0.2)
     assert metrics["max_drawdown"] == pytest.approx(-0.2)
     assert np.isfinite(metrics["annualized_vol"])
-
