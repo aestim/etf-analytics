@@ -11,7 +11,9 @@ import streamlit as st
 
 from chart_colors import ticker_color_map
 from db import (
+    DATAFRAME_ROW_HEIGHT,
     PLOTLY_LAYOUT,
+    dataframe_width,
     demo_mode_banner,
     glossary_expander,
     glossary_help,
@@ -24,8 +26,8 @@ from i18n import (
     SUBCLASS_LABELS_KO,
     TICKER_DESCRIPTIONS_KO,
     Language,
+    current_language,
     tr,
-    ui_controls,
 )
 
 
@@ -65,11 +67,11 @@ def line_chart(
     )
     if y in {"cum_return", "rolling_vol_30d"}:
         fig.update_yaxes(tickformat=".1%")
-    fig.update_layout(**PLOTLY_LAYOUT)
+    fig.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
     st.plotly_chart(fig, width="stretch")
 
 
-lang = ui_controls()
+lang = current_language()
 
 st.title("ETF Analytics")
 st.caption(tr("home.subtitle", lang))
@@ -110,7 +112,8 @@ with st.expander(tr("home.ticker_guide", lang)):
             )
         st.dataframe(
             display_dim,
-            width="stretch",
+            width=dataframe_width(display_dim),
+            row_height=DATAFRAME_ROW_HEIGHT,
             hide_index=True,
             column_config={
                 "ticker": st.column_config.TextColumn(tr("home.ticker", lang)),
@@ -205,7 +208,8 @@ latest["drawdown"] = latest["drawdown"].round(4)
 
 st.dataframe(
     latest,
-    width="stretch",
+    width=dataframe_width(latest),
+    row_height=DATAFRAME_ROW_HEIGHT,
     hide_index=True,
     column_config={
         "rolling_vol_30d": st.column_config.NumberColumn(

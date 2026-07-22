@@ -27,10 +27,15 @@ for _p in (_ROOT / "dashboard", _ROOT / "qa"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from db import PLOTLY_LAYOUT, warehouse_available  # noqa: E402
-from i18n import tr, ui_controls  # noqa: E402
+from db import (  # noqa: E402
+    DATAFRAME_ROW_HEIGHT,
+    PLOTLY_LAYOUT,
+    dataframe_width,
+    warehouse_available,
+)
+from i18n import current_language, tr  # noqa: E402
 
-lang = ui_controls()
+lang = current_language()
 st.title(tr("ask.title", lang))
 st.caption(tr("ask.subtitle", lang))
 st.caption(tr("ask.defaults", lang))
@@ -164,7 +169,8 @@ def show_assistant(entry: dict, key: str) -> None:
         }
         st.dataframe(
             entry["df"],
-            width="stretch",
+            width=dataframe_width(entry["df"]),
+            row_height=DATAFRAME_ROW_HEIGHT,
             hide_index=True,
             key=f"df_{key}",
             column_config=table_columns,

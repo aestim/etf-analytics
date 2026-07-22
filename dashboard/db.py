@@ -26,9 +26,37 @@ PLOTLY_LAYOUT = dict(
     template="plotly_dark",
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02),
-    margin=dict(l=40, r=120, t=30, b=40),
+    font=dict(size=15, color="#fafafa"),
+    legend=dict(
+        orientation="h",
+        yanchor="top",
+        y=-0.16,
+        xanchor="left",
+        x=0,
+        font=dict(size=14),
+        title=dict(font=dict(size=14)),
+    ),
+    margin=dict(l=56, r=20, t=48, b=112),
+    hoverlabel=dict(font=dict(size=15)),
+    xaxis=dict(
+        automargin=True,
+        tickfont=dict(size=14),
+        title=dict(font=dict(size=15)),
+    ),
+    yaxis=dict(
+        automargin=True,
+        tickfont=dict(size=14),
+        title=dict(font=dict(size=15)),
+    ),
 )
+
+DATAFRAME_ROW_HEIGHT = 38
+
+
+def dataframe_width(df: pd.DataFrame) -> str:
+    """Keep short result tables compact; use the container for wider schemas."""
+
+    return "content" if len(df.columns) <= 2 else "stretch"
 
 GLOSSARIES: dict[Language, dict[str, str]] = {
     "en": {

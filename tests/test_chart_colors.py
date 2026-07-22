@@ -63,7 +63,7 @@ def test_dashboard_entrypoint_local_imports_resolve():
 def test_dashboard_keeps_beginner_onboarding_and_small_default_comparison():
     source = (ROOT / "dashboard" / "home.py").read_text(encoding="utf-8")
 
-    assert "lang = ui_controls()" in source
+    assert "lang = current_language()" in source
     assert 'tr("home.intro_title", lang)' in source
     assert '("SPY", "BND", "GLD")' in source
     assert 'line_dash="ticker"' in source
@@ -72,8 +72,23 @@ def test_dashboard_keeps_beginner_onboarding_and_small_default_comparison():
 
 def test_entrypoint_uses_session_preserving_navigation():
     source = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
+    i18n_source = (ROOT / "dashboard" / "i18n.py").read_text(encoding="utf-8")
 
     assert "st.navigation(" in source
     assert 'url_path="Strategy_Lab"' in source
     assert 'url_path="Ask"' in source
-    assert 'st.session_state.get("ui_language_persisted", "English")' in source
+    assert source.index("lang = ui_controls()") < source.index("st.navigation(")
+    assert 'key="ui_language"' in i18n_source
+    assert 'required=True' in i18n_source
+    assert 'persist_state="session"' in i18n_source
+
+
+def test_mobile_and_readability_defaults_are_part_of_the_app_contract():
+    app_source = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
+    config_source = (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    i18n_source = (ROOT / "dashboard" / "i18n.py").read_text(encoding="utf-8")
+
+    assert 'initial_sidebar_state="auto"' in app_source
+    assert "width: 260px !important" in app_source
+    assert "baseFontSize = 17" in config_source
+    assert "large_text" not in i18n_source

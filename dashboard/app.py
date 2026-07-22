@@ -4,16 +4,39 @@ from __future__ import annotations
 
 import streamlit as st
 
+from i18n import ui_controls
+
 
 st.set_page_config(
     page_title="ETF Analytics",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
-language = st.session_state.get("ui_language_persisted", "English")
-korean = language == "한국어"
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"][aria-expanded="true"],
+    section[data-testid="stSidebar"][aria-expanded="true"]
+      > div[data-testid="stSidebarContent"] {
+        width: 260px !important;
+        min-width: 260px !important;
+        max-width: 260px !important;
+    }
+    [data-testid="stCaptionContainer"] p,
+    [data-testid="stWidgetLabel"] p,
+    section[data-testid="stSidebar"] p {
+        font-size: 0.95rem !important;
+        line-height: 1.55 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+lang = ui_controls()
+korean = lang == "ko"
 
 pages = [
     st.Page(

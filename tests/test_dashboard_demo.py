@@ -64,3 +64,21 @@ def test_parquet_marts_match_return_volatility_and_drawdown_definitions(monkeypa
         drop_last["rolling_vol_30d"] * np.sqrt(252)
     )
     assert (risk[risk["ticker"] == "FLAT"]["drawdown"] == 0.0).all()
+
+
+def test_short_dataframes_use_content_width_without_widening_two_columns():
+    two_columns = pd.DataFrame({"ticker": ["SPY"], "return": [0.1]})
+    three_columns = two_columns.assign(as_of_date="2026-07-22")
+
+    assert db.dataframe_width(two_columns) == "content"
+    assert db.dataframe_width(three_columns) == "stretch"
+
+
+def test_shared_plotly_layout_keeps_mobile_plot_area_for_the_chart():
+    legend = db.PLOTLY_LAYOUT["legend"]
+    margin = db.PLOTLY_LAYOUT["margin"]
+
+    assert legend["orientation"] == "h"
+    assert legend["font"]["size"] >= 14
+    assert margin["r"] <= 20
+    assert db.PLOTLY_LAYOUT["font"]["size"] >= 15

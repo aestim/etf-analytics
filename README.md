@@ -56,7 +56,7 @@ execution.
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
 - **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
-- **Dashboard** — Streamlit multipage: English-first interface with a session-wide Korean switch, stable 24-color palette, interactive ticker guide, large-text option, and translated metric tooltips
+- **Dashboard** — Streamlit multipage: English-first interface with a session-wide Korean switch, readable 17px base typography, stable 24-color palette, interactive ticker guide, mobile-safe charts, and translated metric tooltips
 - **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) with a translated beginner reading order and pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
 - **Ask** — English/Korean lookups, comparisons, rankings, and cross-ETF relationship analysis over the marts; answer tables and deterministic chart titles/axes follow the question language, and conclusion-first correlation summaries require no second LLM call
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer

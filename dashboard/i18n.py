@@ -12,11 +12,6 @@ LANGUAGE_OPTIONS = {"English": "en", "한국어": "ko"}
 
 
 COPY: dict[str, dict[Language, str]] = {
-    "large_text": {"en": "🔎 Larger text", "ko": "🔎 큰 글씨로 보기"},
-    "large_text_help": {
-        "en": "Increase the size of body text, inputs and tables.",
-        "ko": "본문, 입력창, 표의 글자를 더 크게 표시합니다.",
-    },
     "home.subtitle": {
         "en": "An educational dashboard comparing the price, return and risk of 17 ETFs",
         "ko": "17개 ETF의 가격·수익·위험을 비교하는 교육용 대시보드",
@@ -161,6 +156,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Buy and hold (SPY)",
         "ko": "한 번 사고 보유 (SPY)",
     },
+    "strategy.buy_hold_short": {
+        "en": "Buy & hold · SPY",
+        "ko": "매수·보유 · SPY",
+    },
     "strategy.buy_hold_note": {
         "en": "Invest everything on the first day and keep holding. This is the benchmark for the other rules.",
         "ko": "첫날 전액을 사고 계속 보유합니다. 다른 규칙과 비교하는 기준선입니다.",
@@ -168,6 +167,10 @@ COPY: dict[str, dict[Language, str]] = {
     "strategy.dca_name": {
         "en": "Monthly instalments (QQQ)",
         "ko": "매월 나눠 사기 (QQQ)",
+    },
+    "strategy.dca_short": {
+        "en": "Monthly · QQQ",
+        "ko": "월 적립 · QQQ",
     },
     "strategy.dca_note": {
         "en": "Invest the same amount about every 21 trading days. It spreads entry timing, but cash waiting on the sidelines can lag a steadily rising market.",
@@ -177,6 +180,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "60% equity / 40% bonds (SPY/BND)",
         "ko": "주식 60%·채권 40% (SPY/BND)",
     },
+    "strategy.balanced_short": {
+        "en": "60/40 · SPY/BND",
+        "ko": "60/40 · SPY/BND",
+    },
     "strategy.balanced_note": {
         "en": "Reset the portfolio to 60/40 each quarter. The rule trims the side that rose and adds to the side that lagged to reduce swings.",
         "ko": "분기마다 비중을 60 대 40으로 되돌립니다. 많이 오른 쪽을 줄이고 덜 오른 쪽을 늘려 흔들림을 낮추려는 규칙입니다.",
@@ -185,6 +192,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "200-day trend (QQQ/cash)",
         "ko": "200일 추세 따라가기 (QQQ/현금)",
     },
+    "strategy.trend_short": {
+        "en": "200-day trend · QQQ",
+        "ko": "200일 추세 · QQQ",
+    },
     "strategy.trend_note": {
         "en": "Hold QQQ above its 200-day average and otherwise hold cash. It may avoid long declines but can lose repeatedly when direction changes often. Signals act the next day.",
         "ko": "QQQ 가격이 200일 평균보다 높으면 보유하고 낮으면 현금으로 둡니다. 긴 하락을 피하려 하지만 방향이 자주 바뀌면 반복 손실이 날 수 있습니다. 신호는 다음 날 반영합니다.",
@@ -192,6 +203,10 @@ COPY: dict[str, dict[Language, str]] = {
     "strategy.split_name": {
         "en": "Split buys, sell at +10% (TQQQ)",
         "ko": "분할 매수 후 10% 매도 (TQQQ)",
+    },
+    "strategy.split_short": {
+        "en": "Split buys · TQQQ",
+        "ko": "분할매수 · TQQQ",
     },
     "strategy.split_note": {
         "en": "Split capital into 40 daily buys and sell all at 10% above average cost. Each cycle's gain is capped, while crash risk remains after cash runs out.",
@@ -322,64 +337,24 @@ def tr(key: str, lang: Language, **values: object) -> str:
 
 
 def ui_controls() -> Language:
-    """Render shared sidebar controls and return the current interface language."""
-
-    # Page widgets are cleaned up when Streamlit navigation changes pages.
-    # Mirror them into durable session keys and restore them on every page.
-    if "ui_language_persisted" not in st.session_state:
-        st.session_state.ui_language_persisted = "English"
-    if "_ui_language_widget" not in st.session_state:
-        st.session_state._ui_language_widget = st.session_state.ui_language_persisted
-
-    def persist_language() -> None:
-        st.session_state.ui_language_persisted = st.session_state._ui_language_widget
+    """Render the entrypoint-level language control for the whole session."""
 
     choice = st.sidebar.segmented_control(
         "Language / 언어",
         options=list(LANGUAGE_OPTIONS),
-        key="_ui_language_widget",
-        on_change=persist_language,
+        default="English",
+        required=True,
+        key="ui_language",
+        persist_state="session",
     )
-    st.session_state.ui_language_persisted = choice or "English"
-    lang: Language = LANGUAGE_OPTIONS.get(choice or "English", DEFAULT_LANGUAGE)  # type: ignore[assignment]
+    return LANGUAGE_OPTIONS[choice or "English"]  # type: ignore[index,return-value]
 
-    if "large_text_persisted" not in st.session_state:
-        st.session_state.large_text_persisted = False
-    if "_large_text_widget" not in st.session_state:
-        st.session_state._large_text_widget = st.session_state.large_text_persisted
 
-    def persist_large_text() -> None:
-        st.session_state.large_text_persisted = st.session_state._large_text_widget
+def current_language() -> Language:
+    """Return the language selected by the shared entrypoint control."""
 
-    large_text = st.sidebar.toggle(
-        tr("large_text", lang),
-        key="_large_text_widget",
-        on_change=persist_large_text,
-        help=tr("large_text_help", lang),
-    )
-    st.session_state.large_text_persisted = large_text
-    if large_text:
-        st.markdown(
-            """
-            <style>
-            [data-testid="stAppViewContainer"] p,
-            [data-testid="stAppViewContainer"] label,
-            [data-testid="stAppViewContainer"] li,
-            [data-testid="stAppViewContainer"] input,
-            [data-testid="stAppViewContainer"] textarea,
-            [data-testid="stDataFrame"] {
-                font-size: 1.12rem !important;
-                line-height: 1.65 !important;
-            }
-            [data-testid="stSidebar"] p,
-            [data-testid="stSidebar"] label {
-                font-size: 1.08rem !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-    return lang
+    choice = st.session_state.get("ui_language", "English")
+    return LANGUAGE_OPTIONS.get(choice, DEFAULT_LANGUAGE)  # type: ignore[return-value]
 
 
 ASSET_LABELS_KO = {
