@@ -77,9 +77,9 @@ Design principle: **the LLM emits structured JSON; generated SQL is parsed and v
 
 Example questions:
 
-- `최근 1년 수익률이 가장 높은 ETF 3개는?`
-- `QQQ와 IWM의 지난 10년 CAGR과 변동성을 비교해줘`
-- `수익률이 높은 ETF일수록 최대 낙폭도 큰가?`
+- `Which three ETFs had the highest total return over the past year?`
+- `Compare the 10-year CAGR and volatility of QQQ and IWM.`
+- `Do ETFs with higher returns also tend to have larger maximum drawdowns?`
 
 If the period is omitted, Ask uses the trailing one year. Questions that ask
 for a prediction, personal investment advice or unavailable data are refused.
