@@ -2,7 +2,11 @@ name: Daily ETF ingest
 
 on:
   schedule:
-    - cron: '0 21 * * 1-5'  # Weekdays 21:00 UTC (after US market close)
+    # Normal run: small overlapping window after each US trading day.
+    - cron: '0 21 * * 1-5'
+    # Monthly reconciliation: refresh the full supported history so dividend
+    # and split adjustments made by the vendor propagate to older rows.
+    - cron: '30 21 1 * *'
   workflow_dispatch:
     inputs:
       dbt_only:
@@ -10,6 +14,14 @@ on:
         required: false
         default: false
         type: boolean
+      fetch_period:
+        description: Yahoo history window (ignored when dbt_only=true)
+        required: false
+        default: 1mo
+        type: choice
+        options:
+          - 1mo
+          - 10y
 
 permissions:
   contents: read
@@ -55,6 +67,28 @@ jobs:
             exit 1
           fi
 
+      - name: Select fetch window
+        id: fetch_window
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule }}
+          REQUESTED_PERIOD: ${{ inputs.fetch_period }}
+        run: |
+          period="1mo"
+          if [ "$SCHEDULE_EXPRESSION" = "30 21 1 * *" ]; then
+            period="10y"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$REQUESTED_PERIOD" ]; then
+            period="$REQUESTED_PERIOD"
+          fi
+
+          case "$period" in
+            1mo|10y) ;;
+            *) echo "::error::Unsupported fetch period: $period"; exit 1 ;;
+          esac
+
+          echo "period=$period" >> "$GITHUB_OUTPUT"
+          echo "Selected Yahoo fetch window: $period"
+
       - name: Install dependencies
         if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
         run: pip install -r ingest/requirements.txt
@@ -67,7 +101,7 @@ jobs:
           # the checkout so the repository remains code-only.
           RAW_DATA_DIR: ${{ runner.temp }}/etf-raw
           ETF_TICKERS: SGOV,VGIT,TLT,BND,LQD,HYG,TIP,SPY,QQQ,QLD,TQQQ,VEA,SCHD,VWO,IWM,VNQ,GLD
-          FETCH_PERIOD: 10y
+          FETCH_PERIOD: ${{ steps.fetch_window.outputs.period }}
 
       - name: dbt build against cloud warehouse
         run: |

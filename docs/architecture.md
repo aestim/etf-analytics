@@ -62,6 +62,14 @@ flowchart LR
 | **marts** | `dbt/models/marts/` | Rebuilt on run | Analytics-ready returns & risk metrics |
 | **serve** | Streamlit reads marts | Read-only | Human-facing views |
 
+### History and refresh policy
+
+- **Retention:** keep every loaded trading day in `raw.etf_prices`; there is no age-based delete. The row count is small for a 17-ETF daily universe, and older regimes are more valuable than the storage saved by truncating them.
+- **Initial/manual backfill:** request 10 years from Yahoo.
+- **Weekday refresh:** request a trailing 1-month overlap and upsert it. The overlap catches delayed sessions and recent corrections without rewriting ten years every day.
+- **Monthly reconciliation:** request 10 years again so retroactive adjusted-close changes from distributions or splits propagate through the warehouse.
+- dbt rebuilds the analysis marts from all retained raw rows, so the stored history can grow beyond ten years even though the vendor reconciliation window is ten years.
+
 ## LLM Q&A layer — security path
 
 Natural-language questions never reach the database as free text. Every request

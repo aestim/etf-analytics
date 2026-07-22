@@ -10,7 +10,7 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 
 ## Features
 
-- **Ingest** — yfinance daily prices (10-year window, one batched request for the whole universe), parquet landing zone + idempotent Postgres upsert; universe is env-driven (`ETF_TICKERS`)
+- **Ingest** — yfinance daily prices (one batched request for the env-driven `ETF_TICKERS` universe), parquet landing zone + idempotent Postgres upsert; cloud runs use a 1-month overlap on weekdays and a 10-year monthly reconciliation
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
 - **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
@@ -137,16 +137,17 @@ Code validation: [`.github/workflows/test.yml`](.github/workflows/test.yml) — 
 every main push and pull request, runs the project pytest suite and a separate
 `dbt parse` job. Superseded runs on the same branch are cancelled.
 
-Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build` against the configured cloud warehouse. It has read-only repository permission and never commits or pushes to `main`.
+Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches a trailing 1-month overlap on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build`. On the first day of each month it reconciles the full 10-year vendor window so historical split/distribution adjustments are corrected. It has read-only repository permission and never commits or pushes to `main`.
 
-A manual dispatch can set `dbt_only=true` to rebuild the cloud marts from the
-existing raw warehouse without fetching prices.
+A manual dispatch can choose `fetch_period=1mo|10y`, or set `dbt_only=true` to
+rebuild cloud marts from the existing raw warehouse without fetching prices.
 
 ### Repository data policy
 
 - `main` contains code, documentation, and a bundled parquet fallback snapshot; scheduled jobs do not mutate it.
 - Local ingest still writes ignored files under `data/raw/` for Docker development.
 - Cloud ingest writes its temporary parquet outside the checkout, upserts the managed Postgres raw table, and rebuilds dbt marts.
+- The warehouse has no automatic age-based deletion: the initial 10-year backfill is retained and new trading days accumulate beyond ten years.
 - The bundled snapshot is a resilience/demo fallback, not the source of current production data. Refresh it only as an intentional, reviewed code change.
 
 ### Optional: cloud warehouse (full mode online)

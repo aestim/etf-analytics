@@ -14,6 +14,11 @@ Definitions for raw files, warehouse tables, and mart outputs. Keep in sync with
 
 Parquet written by ingest, partitioned as `data/raw/{ticker}/dt={YYYY-MM-DD}/prices.parquet`
 
+Local/default backfill requests 10 years. Cloud weekday runs request a trailing
+1-month overlap and upsert by `ticker × price_date`; a monthly 10-year
+reconciliation captures retroactive vendor adjustments. Postgres has no
+age-based deletion, so retained history can grow beyond ten years.
+
 | Column | Type | Description |
 |--------|------|-------------|
 | `ticker` | string | ETF symbol |
