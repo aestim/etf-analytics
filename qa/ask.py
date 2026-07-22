@@ -40,7 +40,11 @@ load_dotenv(ROOT / ".env")
 # change underneath the deployed app. Lite handles the routine structured
 # SQL work; Flash remains the higher-quality fallback.
 _DEFAULT_CHAIN = "gemini-3.1-flash-lite,gemini-3.5-flash"
-MODEL_CHAIN = [m.strip() for m in os.getenv("GEMINI_MODEL_CHAIN", _DEFAULT_CHAIN).split(",") if m.strip()]
+MODEL_CHAIN = [
+    m.strip()
+    for m in os.getenv("GEMINI_MODEL_CHAIN", _DEFAULT_CHAIN).split(",")
+    if m.strip()
+]
 if _override := os.getenv("GEMINI_MODEL"):
     _override = _override.strip()
     MODEL_CHAIN = [_override] + [m for m in MODEL_CHAIN if m != _override]
@@ -60,9 +64,12 @@ def _advance_model() -> bool:
     global _model_idx
     if _model_idx + 1 < len(MODEL_CHAIN):
         _model_idx += 1
-        print(f"   (switching model: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})")
+        print(
+            f"   (switching model: {MODEL_CHAIN[_model_idx - 1]} → {current_model()})"
+        )
         return True
     return False
+
 
 STATEMENT_TIMEOUT_MS = 5000  # defence layer 3: kill runaway queries
 
@@ -399,8 +406,9 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   leverage levels are intentionally included. This scope is part of the answer.
 - Cross-ETF relationship questions are descriptive data queries. Do not reject
   them merely because no specific ticker is named.
-- Write `explanation` in English regardless of the question's language
-  (the UI is English-only). State the applied period explicitly.
+- Write `explanation` in the same language as the user's question (Korean or
+  English). State the applied period explicitly and use plain language before
+  technical terms.
 
 Database schema:
 {build_schema_prompt()}
@@ -500,7 +508,9 @@ def _with_backoff(fn, *args):
                 if _advance_model():
                     rate_attempt = unavailable_attempt = 0
                     continue  # retry immediately on the next model (quotas are per model)
-                raise DailyQuotaError("daily free-tier quota exhausted for all models") from e
+                raise DailyQuotaError(
+                    "daily free-tier quota exhausted for all models"
+                ) from e
 
             if _is_timeout(e) or status_code in DEADLINE_STATUS_CODES:
                 if _advance_model():
@@ -536,14 +546,20 @@ def _with_backoff(fn, *args):
                     "all configured LLM models are temporarily rate-limited"
                 ) from e
             m = re.search(r"retry(?:Delay)?\D*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
-            suggested_delay = float(m.group(1)) + 1 if m else RATE_LIMIT_WAITS[rate_attempt]
+            suggested_delay = (
+                float(m.group(1)) + 1 if m else RATE_LIMIT_WAITS[rate_attempt]
+            )
             base_delay = min(suggested_delay, RATE_LIMIT_MAX_SERVER_WAIT)
             delay = _sleep_with_jitter(base_delay)
             rate_attempt += 1
-            print(f"   (429 rate limit — waiting {delay:.1f}s, retry {rate_attempt}/{len(RATE_LIMIT_WAITS)})")
+            print(
+                f"   (429 rate limit — waiting {delay:.1f}s, retry {rate_attempt}/{len(RATE_LIMIT_WAITS)})"
+            )
 
 
-def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry: bool = True):
+def _structured_call(
+    system: str, contents: str, schema: type[BaseModel], _retry: bool = True
+):
     """Shared structured-output call — also handles parsed=None (empty/truncated)."""
     with new_client() as client:
         response = client.models.generate_content(
@@ -563,7 +579,9 @@ def _structured_call(system: str, contents: str, schema: type[BaseModel], _retry
             time.sleep(2)
             return _structured_call(system, contents, schema, _retry=False)
         raw = (getattr(response, "text", "") or "")[:200]
-        raise ValueError(f"LLM did not return valid {schema.__name__} JSON (raw: {raw!r})")
+        raise ValueError(
+            f"LLM did not return valid {schema.__name__} JSON (raw: {raw!r})"
+        )
     return response.parsed
 
 
@@ -604,7 +622,9 @@ def _reader_engine():
         port=int(os.getenv("POSTGRES_PORT", "5433")),
         database=os.getenv("POSTGRES_DB", "etf_analytics"),
     )
-    return create_engine(url, connect_args={"connect_timeout": 3, "sslmode": sslmode_for(host)})
+    return create_engine(
+        url, connect_args={"connect_timeout": 3, "sslmode": sslmode_for(host)}
+    )
 
 
 def reader_ping() -> tuple[bool, str]:
@@ -640,7 +660,9 @@ def run_readonly(sql: str) -> pd.DataFrame:
         connect_args={"connect_timeout": 3, "sslmode": sslmode_for(host)},
     )
     with engine.begin() as conn:
-        conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}")
+        conn.exec_driver_sql(
+            f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}"
+        )
         return pd.read_sql(sql, conn)
 
 
@@ -649,7 +671,9 @@ def _postgres_error_code(exc: Exception) -> str:
     for candidate in (exc, getattr(exc, "orig", None), getattr(exc, "__cause__", None)):
         if candidate is None:
             continue
-        if code := getattr(candidate, "pgcode", None) or getattr(candidate, "sqlstate", None):
+        if code := getattr(candidate, "pgcode", None) or getattr(
+            candidate, "sqlstate", None
+        ):
             return str(code)
     return ""
 
@@ -665,7 +689,9 @@ class AskResult:
     safe_sql: str = ""  # SQL actually executed, after passing the guard
     explanation: str = ""
     model: str = ""  # which model produced this answer (fallback-chain tracking)
-    error_kind: str = ""  # provider_unavailable | other; lets the UI explain graceful degradation
+    error_kind: str = (
+        ""  # provider_unavailable | other; lets the UI explain graceful degradation
+    )
     df: pd.DataFrame | None = field(default=None, repr=False)
 
     @property
@@ -722,8 +748,13 @@ def answer(question: str) -> AskResult:
                     model=current_model(),
                 )
         except GuardError as e:
-            return AskResult(question, "refused_guard", reason=str(e), sql=generated.sql,
-                             model=current_model())
+            return AskResult(
+                question,
+                "refused_guard",
+                reason=str(e),
+                sql=generated.sql,
+                model=current_model(),
+            )
 
         try:
             df = run_readonly(safe_sql)
@@ -746,9 +777,13 @@ def answer(question: str) -> AskResult:
         if summary := correlation_summary(df, question):
             explanation = summary
         return AskResult(
-            question, "answered",
-            sql=generated.sql, safe_sql=safe_sql,
-            explanation=explanation, df=df, model=current_model(),
+            question,
+            "answered",
+            sql=generated.sql,
+            safe_sql=safe_sql,
+            explanation=explanation,
+            df=df,
+            model=current_model(),
         )
     except DailyQuotaError:
         raise  # waiting won't help — propagate so the runner can stop and explain how to resume
@@ -769,7 +804,9 @@ def ask(question: str) -> pd.DataFrame | None:
     r = answer(question)
     if r.status == "refused_gate":
         print(f"⛔ I can't answer that — {r.reason}")
-        print("   I can answer lookups, comparisons and rankings over prices, returns, volatility and drawdown.")
+        print(
+            "   I can answer lookups, comparisons and rankings over prices, returns, volatility and drawdown."
+        )
     elif r.status == "refused_guard":
         print(f"⛔ Generated SQL rejected by the safety guard: {r.reason}")
         print(f"   (rejected SQL: {r.sql})")
@@ -783,8 +820,10 @@ def ask(question: str) -> pd.DataFrame | None:
         else:
             print(r.df.to_string(index=False))
             if r.truncated:
-                print(f"\n⚠️  Capped at {MAX_ROWS} rows — the result may be cut short. "
-                      "Narrow the tickers or date range for the full series.")
+                print(
+                    f"\n⚠️  Capped at {MAX_ROWS} rows — the result may be cut short. "
+                    "Narrow the tickers or date range for the full series."
+                )
     return r.df
 
 
@@ -799,7 +838,9 @@ def ask_with_chart(question: str) -> None:
     spec = validate_spec(auto_chart_spec(question, df), df)
     fig = render(spec, df)
     if fig is None:
-        reason = TABLE_FALLBACK_REASONS.get("last", "the automatic selector chose a table")
+        reason = TABLE_FALLBACK_REASONS.get(
+            "last", "the automatic selector chose a table"
+        )
         print(f"\n📊 Table instead of a chart ({reason})")
         return
     path = save_html(fig, "ask")
@@ -809,9 +850,13 @@ def ask_with_chart(question: str) -> None:
 if __name__ == "__main__":
     import argparse
 
-    p = argparse.ArgumentParser(description="Natural-language question → table (+ chart with --chart)")
+    p = argparse.ArgumentParser(
+        description="Natural-language question → table (+ chart with --chart)"
+    )
     p.add_argument("question", nargs="+", help="question in English or Korean")
-    p.add_argument("--chart", action="store_true", help="also save an automatically selected chart")
+    p.add_argument(
+        "--chart", action="store_true", help="also save an automatically selected chart"
+    )
     args = p.parse_args()
     q = " ".join(args.question)
     ask_with_chart(q) if args.chart else ask(q)

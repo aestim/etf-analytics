@@ -25,9 +25,9 @@ load_dotenv()
 # --- 1. Response schema ---------------------------------------------------
 class QuestionIntent(BaseModel):
     intent: Literal["data_query", "out_of_scope"]
-    tickers: list[str]        # tickers mentioned in the question (empty if none)
+    tickers: list[str]  # tickers mentioned in the question (empty if none)
     metric: Literal["price", "return", "volatility", "drawdown", "unknown"]
-    reason: str               # one-sentence justification
+    reason: str  # one-sentence justification
 
 
 # --- 2. Allowed scope as the system prompt --------------------------------
@@ -45,14 +45,14 @@ path-dependent simulations (backtests, DCA), or data we don't have
 (dividends, fees, news, reasons why).
 
 Extract any tickers mentioned. Pick the single most relevant metric.
-Write `reason` as one short English sentence (the UI is English-only),
-regardless of the question's language.
+For this standalone Week 1 exercise, write `reason` as one short English
+sentence so the practice output stays consistent.
 """
 
 QUESTIONS = [
-    "지난 1년 TLT 변동성 어땠어?",   # KR "TLT volatility, past year" — expect: data_query
-    "TQQQ 지금 사도 돼?",            # KR "should I buy TQQQ?" — expect: out_of_scope
-    "무한매수법 백테스트 해줘",       # KR "backtest infinite buying" — expect: out_of_scope
+    "지난 1년 TLT 변동성 어땠어?",  # KR "TLT volatility, past year" — expect: data_query
+    "TQQQ 지금 사도 돼?",  # KR "should I buy TQQQ?" — expect: out_of_scope
+    "무한매수법 백테스트 해줘",  # KR "backtest infinite buying" — expect: out_of_scope
     "Which ETF had the lowest volatility this year",  # expect: data_query
 ]
 

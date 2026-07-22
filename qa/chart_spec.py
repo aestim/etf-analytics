@@ -25,6 +25,9 @@ class ChartSpec(BaseModel):
     x: str | None = None  # column name (not needed for table)
     y: str | None = None  # column name — must be numeric
     group_by: str | None = None  # column to color by (e.g. ticker)
+    x_label: str | None = None
+    y_label: str | None = None
+    group_label: str | None = None
     title: str = ""
 
 
@@ -77,7 +80,10 @@ _METRIC_HINTS = (
         ("cagr", "수익", "return", "performance"),
         ("cagr", "cumulative_return", "ytd_return", "daily_return", "return"),
     ),
-    (("변동", "volatility", "volatile"), ("annualized_vol_30d", "rolling_vol_30d", "volatility")),
+    (
+        ("변동", "volatility", "volatile"),
+        ("annualized_vol_30d", "rolling_vol_30d", "volatility"),
+    ),
     (("낙폭", "drawdown"), ("drawdown",)),
     (("가격", "price"), ("adj_close", "close", "price")),
 )
@@ -139,18 +145,22 @@ def metric_columns(question: str, df: pd.DataFrame) -> list[str]:
     ordered: list[str] = []
     matched_hints = []
     for terms, preferred_names in _METRIC_HINTS:
-        positions = [lowered_question.find(term) for term in terms if term in lowered_question]
+        positions = [
+            lowered_question.find(term) for term in terms if term in lowered_question
+        ]
         if positions:
             matched_hints.append((min(positions), preferred_names))
     for _, preferred_names in sorted(matched_hints, key=lambda match: match[0]):
         for preferred in preferred_names:
             ordered.extend(
-                column for column in candidates
+                column
+                for column in candidates
                 if preferred in str(column).lower() and column not in ordered
             )
     for preferred in _METRIC_PRIORITY:
         ordered.extend(
-            column for column in candidates
+            column
+            for column in candidates
             if preferred in str(column).lower() and column not in ordered
         )
     ordered.extend(column for column in candidates if column not in ordered)
@@ -174,7 +184,9 @@ def _date_columns(df: pd.DataFrame) -> list[str]:
             or "date" in name
             or name in {"day", "week", "month", "quarter", "year"}
         )
-        if not looks_like_date and not pd.api.types.is_datetime64_any_dtype(df[column].dtype):
+        if not looks_like_date and not pd.api.types.is_datetime64_any_dtype(
+            df[column].dtype
+        ):
             continue
         non_null = df[column].dropna()
         if non_null.empty:
@@ -200,18 +212,43 @@ def _category_column(df: pd.DataFrame, date_columns: list[str]) -> str | None:
     return candidates[0] if candidates else None
 
 
-def _label(column: str) -> str:
+_KOREAN_LABELS = {
+    "ticker": "티커",
+    "cagr": "연평균 복리수익률",
+    "cumulative_return": "누적수익률",
+    "ytd_return": "연초 이후 수익률",
+    "daily_return": "일간수익률",
+    "leverage": "레버리지 배수",
+    "avg_daily_volume": "평균 일일 거래량",
+    "avg_daily_dollar_volume": "평균 일일 거래대금",
+    "annualized_vol_30d": "30일 연환산 변동성",
+    "avg_annualized_vol_30d": "평균 30일 연환산 변동성",
+    "rolling_vol_30d": "30일 변동성",
+    "drawdown": "고점 대비 하락률",
+    "max_drawdown": "최대 낙폭",
+    "adj_close": "조정 종가",
+}
+
+
+def _is_korean(text: str) -> bool:
+    return any("\uac00" <= character <= "\ud7a3" for character in text)
+
+
+def _label(column: str, question: str = "") -> str:
+    if _is_korean(question):
+        return _KOREAN_LABELS.get(column.lower(), str(column).replace("_", " "))
     return str(column).replace("_", " ").strip().title()
 
 
-def _period_suffix(df: pd.DataFrame) -> str:
+def _period_suffix(df: pd.DataFrame, question: str = "") -> str:
     if "period_start" not in df.columns or "as_of_date" not in df.columns:
         return ""
     starts = pd.to_datetime(df["period_start"], errors="coerce").dropna()
     ends = pd.to_datetime(df["as_of_date"], errors="coerce").dropna()
     if starts.empty or ends.empty:
         return ""
-    return f" ({starts.min():%Y-%m-%d} to {ends.max():%Y-%m-%d})"
+    separator = "~" if _is_korean(question) else " to "
+    return f" ({starts.min():%Y-%m-%d}{separator}{ends.max():%Y-%m-%d})"
 
 
 def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
@@ -221,27 +258,45 @@ def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
     structure clearly supports one. Exact/single-value answers stay tables.
     """
     if df is None or len(df) < 2:
-        return ChartSpec(chart_type="table", title="Result")
+        return ChartSpec(
+            chart_type="table", title="결과" if _is_korean(question) else "Result"
+        )
 
     numeric = metric_columns(question, df)
     if not numeric:
-        return ChartSpec(chart_type="table", title="Result")
+        return ChartSpec(
+            chart_type="table", title="결과" if _is_korean(question) else "Result"
+        )
 
     relationship_result = _has_correlation_result(df)
     relationship_wording = _asks_for_relationship(question)
     if (relationship_result or relationship_wording) and len(numeric) >= 2:
         x, y = numeric[:2]
+        title = (
+            f"{_label(x, question)}과 {_label(y, question)}의 관계"
+            f"{_period_suffix(df, question)}"
+            if _is_korean(question)
+            else f"{_label(y)} vs {_label(x)}{_period_suffix(df)}"
+        )
         return ChartSpec(
             chart_type="scatter",
             x=x,
             y=y,
             group_by="ticker" if "ticker" in df.columns else None,
-            title=f"{_label(y)} vs {_label(x)}{_period_suffix(df)}",
+            x_label=_label(x, question),
+            y_label=_label(y, question),
+            group_label=_label("ticker", question),
+            title=title,
         )
 
     dates = _date_columns(df)
     if dates:
         y = numeric[0]
+        title = (
+            f"{_label(y, question)} 추이{_period_suffix(df, question)}"
+            if _is_korean(question)
+            else f"{_label(y)} over Time{_period_suffix(df)}"
+        )
         return ChartSpec(
             chart_type="line",
             x=dates[0],
@@ -251,20 +306,33 @@ def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
                 if "ticker" in df.columns and df["ticker"].nunique(dropna=True) > 1
                 else None
             ),
-            title=f"{_label(y)} over Time{_period_suffix(df)}",
+            x_label="날짜" if _is_korean(question) else "Date",
+            y_label=_label(y, question),
+            group_label=_label("ticker", question),
+            title=title,
         )
 
     category = _category_column(df, dates)
     if category:
         y = numeric[0]
+        title = (
+            f"{_label(category, question)}별 {_label(y, question)}"
+            f"{_period_suffix(df, question)}"
+            if _is_korean(question)
+            else f"{_label(y)} by {_label(category)}{_period_suffix(df)}"
+        )
         return ChartSpec(
             chart_type="bar",
             x=category,
             y=y,
-            title=f"{_label(y)} by {_label(category)}{_period_suffix(df)}",
+            x_label=_label(category, question),
+            y_label=_label(y, question),
+            title=title,
         )
 
-    return ChartSpec(chart_type="table", title="Result")
+    return ChartSpec(
+        chart_type="table", title="결과" if _is_korean(question) else "Result"
+    )
 
 
 def validate_spec(spec: ChartSpec, df: pd.DataFrame) -> ChartSpec:

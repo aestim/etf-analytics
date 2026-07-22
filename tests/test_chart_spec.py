@@ -22,12 +22,16 @@ def df():
 
 
 def test_valid_line_spec_passes(df):
-    spec = ChartSpec(chart_type="line", x="price_date", y="rolling_vol_30d", group_by="ticker")
+    spec = ChartSpec(
+        chart_type="line", x="price_date", y="rolling_vol_30d", group_by="ticker"
+    )
     assert validate_spec(spec, df) == spec
 
 
 def test_bad_group_by_is_dropped_but_chart_survives(df):
-    spec = ChartSpec(chart_type="line", x="price_date", y="rolling_vol_30d", group_by="no_such_col")
+    spec = ChartSpec(
+        chart_type="line", x="price_date", y="rolling_vol_30d", group_by="no_such_col"
+    )
     out = validate_spec(spec, df)
     assert out.chart_type == "line" and out.group_by is None
 
@@ -58,7 +62,9 @@ def test_invalid_specs_fall_back_to_table(spec, df):
 
 @pytest.mark.parametrize("chart_type", ["line", "bar", "scatter"])
 def test_renderers_return_figure(chart_type, df):
-    spec = ChartSpec(chart_type=chart_type, x="price_date", y="rolling_vol_30d", title="t")
+    spec = ChartSpec(
+        chart_type=chart_type, x="price_date", y="rolling_vol_30d", title="t"
+    )
     fig = render(spec, df)
     assert fig is not None and fig.data  # the plotly Figure has traces
 
@@ -125,7 +131,8 @@ def test_auto_selects_bar_for_return_ranking_and_ignores_observations():
     )
     spec = auto_chart_spec("가장 수익률 높은 ETF 3개", ranking)
     assert (spec.chart_type, spec.x, spec.y) == ("bar", "ticker", "cumulative_return")
-    assert "2025-07-22 to 2026-07-22" in spec.title
+    assert "티커별 누적수익률" in spec.title
+    assert "2025-07-22~2026-07-22" in spec.title
 
 
 def test_auto_selects_scatter_only_for_explicit_relationship_question():
@@ -139,6 +146,13 @@ def test_auto_selects_scatter_only_for_explicit_relationship_question():
     spec = auto_chart_spec("수익률과 변동성의 관계를 보여줘", relationship)
     assert spec.chart_type == "scatter"
     assert {spec.x, spec.y} == {"cumulative_return", "annualized_vol_30d"}
+    assert "누적수익률" in spec.title
+    assert "30일 연환산 변동성" in spec.title
+    fig = render(spec, relationship)
+    assert {fig.layout.xaxis.title.text, fig.layout.yaxis.title.text} == {
+        "누적수익률",
+        "30일 연환산 변동성",
+    }
 
 
 def test_auto_understands_korean_comparative_relationship_question():

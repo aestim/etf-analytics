@@ -29,6 +29,17 @@ def render(spec: ChartSpec, df: pd.DataFrame):
     kwargs: dict = {"x": spec.x, "y": spec.y}
     if spec.group_by:
         kwargs["color"] = spec.group_by
+    labels = {
+        column: label
+        for column, label in (
+            (spec.x, spec.x_label),
+            (spec.y, spec.y_label),
+            (spec.group_by, spec.group_label),
+        )
+        if column and label
+    }
+    if labels:
+        kwargs["labels"] = labels
     if spec.title:
         kwargs["title"] = spec.title
     renderers = {"line": px.line, "bar": px.bar, "scatter": px.scatter}
@@ -36,10 +47,16 @@ def render(spec: ChartSpec, df: pd.DataFrame):
     if spec.chart_type == "scatter" and is_percent_metric(spec.x):
         fig.update_xaxes(tickformat=".1%")
     if spec.chart_type == "scatter" and is_dollar_metric(spec.x):
+        dollar_axis_title = spec.x_label or "Average Daily Dollar Volume"
+        suffix = (
+            " (USD, 로그 눈금)"
+            if any("\uac00" <= char <= "\ud7a3" for char in dollar_axis_title)
+            else " (USD, log scale)"
+        )
         fig.update_xaxes(
             type="log",
             tickprefix="$",
-            title_text="Average Daily Dollar Volume (USD, log scale)",
+            title_text=f"{dollar_axis_title}{suffix}",
         )
     if is_percent_metric(spec.y):
         fig.update_yaxes(tickformat=".1%")

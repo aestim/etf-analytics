@@ -20,7 +20,9 @@ def direct_pipeline(monkeypatch):
     return calls
 
 
-def test_answer_routes_and_generates_sql_in_one_model_call(monkeypatch, direct_pipeline):
+def test_answer_routes_and_generates_sql_in_one_model_call(
+    monkeypatch, direct_pipeline
+):
     frame = pd.DataFrame({"ticker": ["SPY"], "adj_close": [650.0]})
     monkeypatch.setattr(
         ask,
@@ -53,7 +55,9 @@ def test_answer_stops_at_out_of_scope_route(monkeypatch):
             explanation="Predictions are outside the warehouse scope.",
         ),
     )
-    monkeypatch.setattr(ask, "run_readonly", lambda sql: pytest.fail("A refusal must not run SQL"))
+    monkeypatch.setattr(
+        ask, "run_readonly", lambda sql: pytest.fail("A refusal must not run SQL")
+    )
 
     result = ask.answer("Predict tomorrow's winner")
 
@@ -191,6 +195,6 @@ def test_answer_adds_executed_correlation_summary(monkeypatch):
     result = ask.answer("레버리지와 변동성의 상관관계는?")
 
     assert "Uses the trailing one-year period" not in result.explanation
-    assert "Pearson correlation: 0.72" in result.explanation
-    assert "current 2-ETF warehouse universe" in result.explanation
-    assert "does not establish causation" in result.explanation
+    assert "Pearson 상관계수: 0.72" in result.explanation
+    assert "현재 데이터에 있는 ETF 2개" in result.explanation
+    assert "상관관계는 원인·결과" in result.explanation
