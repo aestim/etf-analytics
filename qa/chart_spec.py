@@ -223,10 +223,27 @@ _KOREAN_LABELS = {
     "avg_daily_dollar_volume": "평균 일일 거래대금",
     "annualized_vol_30d": "30일 연환산 변동성",
     "avg_annualized_vol_30d": "평균 30일 연환산 변동성",
-    "rolling_vol_30d": "30일 변동성",
+    "rolling_vol_30d": "30일 가격 변동",
     "drawdown": "고점 대비 하락률",
     "max_drawdown": "최대 낙폭",
-    "adj_close": "조정 종가",
+    "adj_close": "배당 반영 가격",
+}
+
+_ENGLISH_LABELS = {
+    "ticker": "ETF",
+    "cagr": "CAGR",
+    "cumulative_return": "Total Return",
+    "ytd_return": "Year-to-Date Return",
+    "daily_return": "Daily Return",
+    "leverage": "Leverage",
+    "avg_daily_volume": "Average Daily Share Volume",
+    "avg_daily_dollar_volume": "Average Daily Trading Value",
+    "annualized_vol_30d": "Annualized 30-Day Price Swings",
+    "avg_annualized_vol_30d": "Average Annualized 30-Day Price Swings",
+    "rolling_vol_30d": "30-Day Price Swings",
+    "drawdown": "Drop from a Previous High",
+    "max_drawdown": "Largest Drop",
+    "adj_close": "Dividend-Adjusted Price",
 }
 
 
@@ -237,7 +254,9 @@ def _is_korean(text: str) -> bool:
 def _label(column: str, question: str = "") -> str:
     if _is_korean(question):
         return _KOREAN_LABELS.get(column.lower(), str(column).replace("_", " "))
-    return str(column).replace("_", " ").strip().title()
+    return _ENGLISH_LABELS.get(
+        column.lower(), str(column).replace("_", " ").strip().title()
+    )
 
 
 def _period_suffix(df: pd.DataFrame, question: str = "") -> str:
@@ -295,7 +314,7 @@ def auto_chart_spec(question: str, df: pd.DataFrame) -> ChartSpec:
         title = (
             f"{_label(y, question)} 추이{_period_suffix(df, question)}"
             if _is_korean(question)
-            else f"{_label(y)} over Time{_period_suffix(df)}"
+            else f"{_label(y)} over time{_period_suffix(df)}"
         )
         return ChartSpec(
             chart_type="line",

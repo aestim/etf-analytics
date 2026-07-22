@@ -41,20 +41,20 @@ korean = lang == "ko"
 pages = [
     st.Page(
         "home.py",
-        title="대시보드" if korean else "Dashboard",
+        title="ETF 한눈에 보기" if korean else "ETF Overview",
         icon="📈",
         url_path="",
         default=True,
     ),
     st.Page(
         "pages/1_Strategy_Lab.py",
-        title="투자 규칙 비교" if korean else "Strategy Lab",
+        title="투자 방법 비교" if korean else "Compare Strategies",
         icon="🧪",
         url_path="Strategy_Lab",
     ),
     st.Page(
         "pages/2_Ask.py",
-        title="데이터에 질문" if korean else "Ask",
+        title="ETF 질문하기" if korean else "Ask About ETFs",
         icon="💬",
         url_path="Ask",
     ),

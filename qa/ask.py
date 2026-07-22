@@ -764,8 +764,8 @@ def answer(question: str) -> AskResult:
                     question,
                     "error",
                     reason=(
-                        "The warehouse schema is behind the deployed app. "
-                        "Rebuild the cloud dbt marts, then retry the question."
+                        "The app's data tables need to be updated. "
+                        "Refresh the cloud data, then try the question again."
                     ),
                     sql=generated.sql,
                     safe_sql=safe_sql,

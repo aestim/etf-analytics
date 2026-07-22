@@ -39,18 +39,18 @@ def is_dollar_metric(column_name: str | None) -> bool:
 
 METRIC_LABELS = {
     "cagr": "CAGR",
-    "cumulative_return": "cumulative return",
+    "cumulative_return": "total return",
     "ytd_return": "year-to-date return",
     "daily_return": "daily return",
-    "leverage": "leverage multiple",
+    "leverage": "leverage",
     "avg_daily_volume": "average daily share volume",
-    "avg_daily_dollar_volume": "average daily dollar volume (log-scaled)",
-    "annualized_vol_30d": "annualized 30-day volatility",
-    "avg_annualized_vol_30d": "average annualized 30-day volatility",
-    "rolling_vol_30d": "30-day volatility",
-    "drawdown": "drawdown",
-    "max_drawdown": "maximum drawdown",
-    "adj_close": "adjusted close price",
+    "avg_daily_dollar_volume": "average daily trading value (log scale)",
+    "annualized_vol_30d": "annualized 30-day price swings",
+    "avg_annualized_vol_30d": "average annualized 30-day price swings",
+    "rolling_vol_30d": "30-day price swings",
+    "drawdown": "drop from a previous high",
+    "max_drawdown": "largest drop",
+    "adj_close": "dividend-adjusted price",
 }
 
 KOREAN_METRIC_LABELS = {
@@ -63,18 +63,18 @@ KOREAN_METRIC_LABELS = {
     "avg_daily_dollar_volume": "평균 일일 거래대금",
     "annualized_vol_30d": "30일 연환산 변동성",
     "avg_annualized_vol_30d": "평균 30일 연환산 변동성",
-    "rolling_vol_30d": "30일 변동성",
+    "rolling_vol_30d": "30일 가격 변동",
     "drawdown": "고점 대비 하락률",
     "max_drawdown": "최대 낙폭",
-    "adj_close": "조정 종가",
+    "adj_close": "배당 반영 가격",
 }
 
 KOREAN_COLUMN_LABELS = {
     **KOREAN_METRIC_LABELS,
     "ticker": "티커",
-    "name": "상품 이름",
-    "asset_class": "자산 종류",
-    "sub_class": "세부 종류",
+    "name": "ETF 이름",
+    "asset_class": "자산 유형",
+    "sub_class": "세부 유형",
     "price_date": "날짜",
     "period_start": "비교 시작일",
     "as_of_date": "비교 종료일",
@@ -133,7 +133,7 @@ def _universe_text(df: pd.DataFrame) -> tuple[str, int]:
         scopes = df["universe_scope"].dropna().astype(str)
         if not scopes.empty:
             return scopes.iloc[0], count
-    return f"the current {count}-ETF warehouse universe", count
+    return f"the {count} ETFs currently included", count
 
 
 def correlation_summary(df: pd.DataFrame | None, question: str = "") -> str:
@@ -203,17 +203,17 @@ def correlation_summary(df: pd.DataFrame | None, question: str = "") -> str:
             else:
                 comparison = "더 높은" if coefficient > 0 else "더 낮은"
                 conclusion = (
-                    f"{korean_scope}에서 {x_label}이 높은 ETF일수록 "
+                    f"{korean_scope}에서 {x_label} 값이 높은 ETF일수록 "
                     f"{y_label}도 {comparison} 경향을 보였습니다"
                     f"{_korean_period_text(df)}."
                 )
         return (
             f"{conclusion}\n\n"
-            f"**Pearson 상관계수: {coefficient:.2f}** "
-            f"({korean_strength} {korean_direction} 횡단면 관계). "
-            "점 하나는 해당 기간을 집계한 ETF 하나입니다. "
-            "이 결과는 현재 선정된 ETF 목록에 대한 설명일 뿐이며, "
-            "상관관계는 원인·결과나 전체 ETF 시장의 법칙을 의미하지 않습니다."
+            f"**피어슨 상관계수: {coefficient:.2f}** "
+            f"({korean_strength} {korean_direction} 관계, ETF {ticker_count}개). "
+            "점 하나는 선택한 기간의 ETF 하나를 나타냅니다. "
+            "현재 포함된 ETF만 설명한 결과이며, 상관관계가 원인과 결과를 "
+            "뜻하지는 않습니다."
         )
 
     if axes is None:
@@ -236,8 +236,8 @@ def correlation_summary(df: pd.DataFrame | None, question: str = "") -> str:
     return (
         f"{conclusion}\n\n"
         f"**Pearson correlation: {coefficient:.2f}** "
-        f"({strength} {direction} cross-sectional relationship; {ticker_count} ETFs). "
-        "Each point is one ticker aggregated over the stated period. This is a "
-        "descriptive result for the curated warehouse universe; correlation does "
-        "not establish causation or population-wide statistical significance."
+        f"({strength} {direction} relationship across {ticker_count} ETFs). "
+        "Each point represents one ETF for the selected period. This result only "
+        "describes the ETFs currently included, and correlation does not prove "
+        "cause and effect."
     )

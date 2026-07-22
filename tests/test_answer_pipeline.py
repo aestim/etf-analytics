@@ -155,7 +155,7 @@ def test_answer_hides_raw_error_when_deployed_warehouse_schema_lags(monkeypatch)
 
     assert result.status == "error"
     assert result.error_kind == "warehouse_schema"
-    assert "warehouse schema is behind" in result.reason.lower()
+    assert "data tables need to be updated" in result.reason.lower()
     assert "raw traceback" not in result.reason
 
 
@@ -195,6 +195,6 @@ def test_answer_adds_executed_correlation_summary(monkeypatch):
     result = ask.answer("레버리지와 변동성의 상관관계는?")
 
     assert "Uses the trailing one-year period" not in result.explanation
-    assert "Pearson 상관계수: 0.72" in result.explanation
+    assert "피어슨 상관계수: 0.72" in result.explanation
     assert "현재 데이터에 있는 ETF 2개" in result.explanation
-    assert "상관관계는 원인·결과" in result.explanation
+    assert "상관관계가 원인과 결과" in result.explanation

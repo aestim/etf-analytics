@@ -24,9 +24,22 @@ def test_every_interface_key_has_both_languages():
 
 
 def test_translation_lookup_keeps_each_interface_language_separate():
-    assert tr("home.subtitle", "en").startswith("An educational dashboard")
-    assert tr("home.subtitle", "ko").startswith("17개 ETF")
+    assert tr("home.subtitle", "en").startswith("Compare historical prices")
+    assert tr("home.subtitle", "ko").startswith("17개 ETF의 과거 가격")
     assert tr("ask.truncated", "en", rows=200).startswith("Only 200 rows")
+
+
+def test_interface_copy_avoids_internal_or_translation_heavy_phrases():
+    all_messages = "\n".join(
+        message for translations in COPY.values() for message in translations.values()
+    )
+
+    assert "Ask the data" not in all_messages
+    assert "fallback model" not in all_messages
+    assert "warehouse schema" not in all_messages
+    assert "결과 모양" not in all_messages
+    assert tr("ask.title", "en") == "💬 Ask About ETFs"
+    assert tr("ask.title", "ko") == "💬 ETF 정보 물어보기"
 
 
 def test_korean_ticker_explanations_cover_the_configured_universe():

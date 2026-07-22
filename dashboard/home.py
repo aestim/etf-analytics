@@ -41,18 +41,18 @@ def line_chart(
     labels = (
         {
             "price_date": "Date",
-            "adj_close": "Adjusted price",
-            "cum_return": "Return",
-            "rolling_vol_30d": "Volatility",
-            "ticker": "ETF ticker",
+            "adj_close": "Dividend-adjusted price",
+            "cum_return": "Total return",
+            "rolling_vol_30d": "30-day price swings",
+            "ticker": "ETF",
         }
         if lang == "en"
         else {
             "price_date": "날짜",
-            "adj_close": "조정 가격",
-            "cum_return": "수익률",
-            "rolling_vol_30d": "변동성",
-            "ticker": "ETF 티커",
+            "adj_close": "배당 반영 가격",
+            "cum_return": "누적수익률",
+            "rolling_vol_30d": "30일 가격 변동",
+            "ticker": "ETF",
         }
     )
     fig = px.line(

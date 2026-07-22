@@ -60,23 +60,23 @@ def dataframe_width(df: pd.DataFrame) -> str:
 
 GLOSSARIES: dict[Language, dict[str, str]] = {
     "en": {
-        "CAGR": "Compound annual growth rate — the constant yearly rate that would turn the starting value into the ending value over the full period.",
-        "Ann. vol": "Annualised volatility — daily return variability converted to a one-year scale. Higher means wider price swings.",
-        "Max drawdown": "Maximum drawdown — the largest fall from a previous peak to a later low. −50% means the value halved.",
-        "Sharpe (rf=0)": "Sharpe ratio — return relative to volatility. This app assumes a risk-free rate of 0%.",
-        "adj_close": "Adjusted close — a historical price adjusted for distributions and share splits, suitable for return calculations.",
-        "cum_return": "Cumulative return — the total gain or loss from one unit invested on the first date. 0.5 means +50%.",
-        "rolling_vol_30d": "30-trading-day volatility — how widely daily returns moved over the latest 30 trading days.",
-        "drawdown": "Drawdown — the decline from the previous highest adjusted price. 0 is a peak and −0.12 is 12% below it.",
+        "CAGR": "Compound annual growth rate — the average yearly growth rate over the full period.",
+        "Ann. vol": "Annualized volatility — how much daily returns moved up and down, expressed as a yearly number. Higher means wider price swings.",
+        "Max drawdown": "Maximum drawdown — the largest percentage drop from a previous high. −50% means the value fell by half.",
+        "Sharpe (rf=0)": "Sharpe ratio — return compared with price swings. Higher values mean more return for the amount of risk taken. This app assumes a risk-free rate of 0%.",
+        "adj_close": "Dividend-adjusted price — a historical price adjusted for dividends and stock splits so returns can be compared fairly.",
+        "cum_return": "Total return — how much a starting value of 1 gained or lost. 0.5 means +50%.",
+        "rolling_vol_30d": "30-day price swings — how much daily returns moved up and down over the latest 30 trading days.",
+        "drawdown": "Drop from a previous high — 0 means a new high, and −0.12 means 12% below that high.",
     },
     "ko": {
         "CAGR": "연평균 복리수익률 — 전체 기간의 성과를 '매년 같은 비율로 늘었다면'으로 바꿔 표시한 값.",
-        "Ann. vol": "연환산 변동성 — 일간 수익률의 흔들림을 1년 척도로 바꾼 값. 클수록 가격 흔들림이 큼.",
-        "Max drawdown": "최대 낙폭 — 과거의 고점에서 이후 저점까지 가장 크게 떨어진 비율. −50%면 절반으로 줄었다는 뜻.",
-        "Sharpe (rf=0)": "샤프 지수 — 가격 흔들림 대비 수익을 나타낸 값. 이 앱은 무위험 수익률을 0으로 가정.",
-        "adj_close": "조정 종가 — 배당과 주식 분할을 과거 가격에 반영해 장기 수익률 비교에 맞춘 가격.",
+        "Ann. vol": "연환산 변동성 — 가격이 오르내린 정도를 1년 기준으로 바꾼 값. 클수록 가격 흔들림이 큼.",
+        "Max drawdown": "최대 낙폭 — 이전 고점에서 가장 크게 떨어진 비율. −50%면 가치가 절반으로 줄었다는 뜻.",
+        "Sharpe (rf=0)": "샤프 지수 — 가격 흔들림과 비교해 어느 정도 수익을 냈는지 보여주는 값. 이 앱은 무위험 수익률을 0%로 가정.",
+        "adj_close": "배당 반영 가격 — 배당과 주식 분할을 반영해 수익률을 공정하게 비교할 수 있도록 조정한 과거 가격.",
         "cum_return": "누적수익률 — 시작일에 1을 투자했을 때 전체 기간에 얼마나 늘거나 줄었는지. 0.5는 +50%.",
-        "rolling_vol_30d": "30거래일 변동성 — 최근 약 한 달의 일간 수익률이 얼마나 크게 흔들렸는지 나타낸 값.",
+        "rolling_vol_30d": "30일 가격 변동 — 최근 30거래일 동안 일간 수익률이 얼마나 크게 오르내렸는지 나타낸 값.",
         "drawdown": "고점 대비 하락률 — 이전 최고 가격에서 현재 얼마나 내려왔는지. 0은 최고점, −0.12는 12% 아래.",
     },
 }
@@ -84,22 +84,22 @@ GLOSSARIES: dict[Language, dict[str, str]] = {
 GLOSSARY_LABELS: dict[Language, dict[str, str]] = {
     "en": {
         "CAGR": "CAGR",
-        "Ann. vol": "Annualised volatility",
+        "Ann. vol": "Annualized volatility",
         "Max drawdown": "Maximum drawdown",
         "Sharpe (rf=0)": "Sharpe ratio",
-        "adj_close": "Adjusted close",
-        "cum_return": "Cumulative return",
-        "rolling_vol_30d": "30-trading-day volatility",
-        "drawdown": "Drawdown",
+        "adj_close": "Dividend-adjusted price",
+        "cum_return": "Total return",
+        "rolling_vol_30d": "30-day price swings",
+        "drawdown": "Drop from a previous high",
     },
     "ko": {
         "CAGR": "연평균 복리수익률(CAGR)",
         "Ann. vol": "연환산 변동성",
         "Max drawdown": "최대 낙폭",
         "Sharpe (rf=0)": "샤프 지수",
-        "adj_close": "조정 종가",
+        "adj_close": "배당 반영 가격",
         "cum_return": "누적수익률",
-        "rolling_vol_30d": "30거래일 변동성",
+        "rolling_vol_30d": "30일 가격 변동",
         "drawdown": "고점 대비 하락률",
     },
 }
@@ -260,15 +260,7 @@ def demo_mode_banner(lang: Language = "en") -> None:
     """Small caption shown when running without a database."""
     if not warehouse_available():
         messages = {
-            "en": (
-                "⚡ Demo mode — using the bundled parquet snapshot, which may lag "
-                "the market. Configure PostgreSQL or run the local Docker stack for "
-                "the current dbt warehouse."
-            ),
-            "ko": (
-                "⚡ 데모 모드 — 포함된 parquet 예시 데이터를 사용하므로 시장보다 "
-                "늦을 수 있습니다. 최신 dbt 분석 표를 사용하려면 PostgreSQL을 "
-                "설정하거나 로컬 Docker를 실행하세요."
-            ),
+            "en": "⚡ Demo data — this view may be behind the latest market data.",
+            "ko": "⚡ 예시 데이터 — 최신 시장 상황보다 늦을 수 있습니다.",
         }
         st.caption(messages[lang])

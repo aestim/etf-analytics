@@ -158,8 +158,8 @@ After ingest and dbt succeed manually, unpause `etf_pipeline` in the Airflow UI.
 streamlit run dashboard/app.py
 ```
 
-Open http://localhost:8501 — dashboard on the home page, with **Strategy Lab**
-and **Ask** in the sidebar. Ask requires a reachable Postgres warehouse and
+Open http://localhost:8501 — dashboard on the home page, with **Compare Strategies**
+and **Ask About ETFs** in the sidebar. Ask requires a reachable Postgres warehouse and
 `GEMINI_API_KEY`; the other pages retain their parquet fallback.
 
 ## Pipeline screenshots

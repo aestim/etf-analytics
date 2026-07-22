@@ -42,7 +42,7 @@ def test_table_column_labels_follow_question_language():
         display_column_label("cumulative_return", "최근 1년 수익률은?") == "누적수익률"
     )
     assert display_column_label("period_start", "최근 1년 수익률은?") == "비교 시작일"
-    assert display_column_label("cumulative_return", "Show returns") == "Cumulative return"
+    assert display_column_label("cumulative_return", "Show returns") == "Total return"
 
 
 @pytest.mark.parametrize(
@@ -57,7 +57,7 @@ def test_correlation_summary_uses_executed_value(coefficient, description):
     summary = correlation_summary(pd.DataFrame({"correlation": [coefficient] * 3}))
     assert f"{coefficient:.2f}" in summary
     assert description in summary
-    assert "does not establish causation" in summary
+    assert "does not prove cause and effect" in summary
 
 
 def test_correlation_summary_is_conclusion_first_and_scoped():
@@ -77,12 +77,12 @@ def test_correlation_summary_is_conclusion_first_and_scoped():
         "How do return performance and volatility move together across ETFs?",
     )
 
-    assert summary.startswith("Within the current 3-ETF warehouse universe")
-    assert "higher cumulative return" in summary
-    assert "higher average annualized 30-day volatility" in summary
+    assert summary.startswith("Within the 3 ETFs currently included")
+    assert "higher total return" in summary
+    assert "higher average annualized 30-day price swings" in summary
     assert "2025-07-22 to 2026-07-22" in summary
-    assert "cross-sectional relationship; 3 ETFs" in summary
-    assert "population-wide statistical significance" in summary
+    assert "relationship across 3 ETFs" in summary
+    assert "does not prove cause and effect" in summary
 
 
 def test_correlation_summary_uses_executed_universe_scope():
@@ -117,8 +117,8 @@ def test_correlation_summary_matches_korean_question_language():
     summary = correlation_summary(frame, "수익률이 높을수록 최대 낙폭도 큰가?")
 
     assert summary.startswith("현재 데이터에 있는 ETF 2개")
-    assert "Pearson 상관계수: 0.72" in summary
-    assert "상관관계는 원인·결과" in summary
+    assert "피어슨 상관계수: 0.72" in summary
+    assert "상관관계가 원인과 결과" in summary
 
 
 def test_correlation_summary_ignores_missing_coefficient():
