@@ -23,7 +23,9 @@ def _contrast_against_black(hex_color: str) -> float:
 
 def test_palette_has_accessible_contrast_on_black():
     assert len(DARK_THEME_TICKER_PALETTE) == 24
-    assert all(_contrast_against_black(color) >= 4.5 for color in DARK_THEME_TICKER_PALETTE)
+    assert all(
+        _contrast_against_black(color) >= 4.5 for color in DARK_THEME_TICKER_PALETTE
+    )
 
 
 def test_ticker_mapping_is_stable_and_never_uses_old_black_color():
@@ -37,12 +39,16 @@ def test_ticker_mapping_is_stable_and_never_uses_old_black_color():
 
 def test_dashboard_entrypoint_local_imports_resolve():
     """Catch stale re-exports before Streamlit deploys a broken home page."""
-    app_path = ROOT / "dashboard" / "app.py"
-    tree = ast.parse(app_path.read_text(encoding="utf-8"))
+    home_path = ROOT / "dashboard" / "home.py"
+    tree = ast.parse(home_path.read_text(encoding="utf-8"))
     missing: list[str] = []
 
     for node in tree.body:
-        if not isinstance(node, ast.ImportFrom) or node.module not in {"chart_colors", "db"}:
+        if not isinstance(node, ast.ImportFrom) or node.module not in {
+            "chart_colors",
+            "db",
+            "i18n",
+        }:
             continue
         imported_module = importlib.import_module(node.module)
         missing.extend(
@@ -52,3 +58,22 @@ def test_dashboard_entrypoint_local_imports_resolve():
         )
 
     assert missing == []
+
+
+def test_dashboard_keeps_beginner_onboarding_and_small_default_comparison():
+    source = (ROOT / "dashboard" / "home.py").read_text(encoding="utf-8")
+
+    assert "lang = ui_controls()" in source
+    assert 'tr("home.intro_title", lang)' in source
+    assert '("SPY", "BND", "GLD")' in source
+    assert 'line_dash="ticker"' in source
+    assert 'tr("home.nav_ask", lang)' in source
+
+
+def test_entrypoint_uses_session_preserving_navigation():
+    source = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
+
+    assert "st.navigation(" in source
+    assert 'url_path="Strategy_Lab"' in source
+    assert 'url_path="Ask"' in source
+    assert 'st.session_state.get("ui_language_persisted", "English")' in source

@@ -1,5 +1,8 @@
 # Architecture
 
+New to ETFs or data systems? Read the plain-language **Start here if you are not
+technical** section in the main README before this implementation reference.
+
 ## Overview
 
 Batch pipeline that ingests ETF prices, lands raw files, loads PostgreSQL, transforms with dbt, and serves metrics to a Streamlit dashboard. Orchestration is handled by Airflow once each step runs successfully on its own.
@@ -9,11 +12,20 @@ Batch pipeline that ingests ETF prices, lands raw files, loads PostgreSQL, trans
 | Component | Role | Technology |
 |-----------|------|------------|
 | Ingest | Pull prices from API; write raw | Python, `yfinance` |
-| Raw zone | Immutable daily snapshots | `data/raw/` (local; S3 in production) |
+| Raw zone | Source-shaped snapshots before loading | `data/raw/` locally; temporary runner storage in the hosted job |
 | Warehouse | Structured tables for SQL transforms | PostgreSQL 15 |
 | Transform | Clean, model, test | dbt |
-| Orchestration | Schedule & dependency management | Apache Airflow 2.x |
+| Orchestration | Schedule & dependency management | Airflow locally; GitHub Actions for the hosted refresh |
 | Presentation | Charts & comparison tables | Streamlit |
+| Natural-language Q&A | Read-only Korean/English questions over marts | Gemini, sqlglot, `etf_reader` |
+
+The presentation layer has one shared `dashboard/i18n.py` contract. English is
+the default for international portfolio review; the sidebar language control
+keeps English/Korean selection across pages during the Streamlit session. Ask
+answers and generated chart labels follow the question language independently
+of the surrounding interface. `dashboard/app.py` uses `st.navigation`, while
+the home and two feature pages remain separate modules; this keeps shared
+session state intact without merging the page implementations.
 
 ## Data flow
 
@@ -136,8 +148,10 @@ DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
 - Secrets via `.env` (never commit `.env`)
 - See `.env.example` for variable names
 
-## Observability (future)
+## Observability
 
 - Airflow task logs
+- GitHub Actions run logs for code checks and hosted data refreshes
 - dbt run artifacts under `dbt/target/`
-- Optional: data freshness check on `mart_etf_risk_metrics.as_of_date`
+- A failing dbt recency test when `mart_etf_risk_metrics.as_of_date` is more than seven days old
+- Ask request/error events under `qa/logs/` locally (questions can be sensitive; do not publish raw logs)

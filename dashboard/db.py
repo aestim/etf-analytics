@@ -17,6 +17,8 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+from i18n import Language
+
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
@@ -28,23 +30,63 @@ PLOTLY_LAYOUT = dict(
     margin=dict(l=40, r=120, t=30, b=40),
 )
 
-GLOSSARY = {
-    "CAGR": "Compound Annual Growth Rate — the constant yearly return that would turn the starting value into the ending value over the period.",
-    "Ann. vol": "Annualized volatility — standard deviation of daily returns × √252. Higher = bigger day-to-day swings.",
-    "Max drawdown": "Worst peak-to-trough decline of the curve. −50% means the value halved from its previous peak before recovering.",
-    "Sharpe (rf=0)": "Average return per unit of volatility, risk-free rate assumed 0. Rough guide: below 0.5 weak, around 1 solid.",
-    "adj_close": "Close price retroactively adjusted for splits and distributions — the correct series for return math.",
-    "cum_return": "Growth of 1 unit invested at the start, compounding daily returns (0.5 = +50%).",
-    "rolling_vol_30d": "Standard deviation of daily returns over the trailing 30 trading days. Daily scale — multiply by √252 to annualize.",
-    "drawdown": "Decline from the running maximum adjusted close. 0 = at peak; −0.12 = 12% below the peak.",
+GLOSSARIES: dict[Language, dict[str, str]] = {
+    "en": {
+        "CAGR": "Compound annual growth rate — the constant yearly rate that would turn the starting value into the ending value over the full period.",
+        "Ann. vol": "Annualised volatility — daily return variability converted to a one-year scale. Higher means wider price swings.",
+        "Max drawdown": "Maximum drawdown — the largest fall from a previous peak to a later low. −50% means the value halved.",
+        "Sharpe (rf=0)": "Sharpe ratio — return relative to volatility. This app assumes a risk-free rate of 0%.",
+        "adj_close": "Adjusted close — a historical price adjusted for distributions and share splits, suitable for return calculations.",
+        "cum_return": "Cumulative return — the total gain or loss from one unit invested on the first date. 0.5 means +50%.",
+        "rolling_vol_30d": "30-trading-day volatility — how widely daily returns moved over the latest 30 trading days.",
+        "drawdown": "Drawdown — the decline from the previous highest adjusted price. 0 is a peak and −0.12 is 12% below it.",
+    },
+    "ko": {
+        "CAGR": "연평균 복리수익률 — 전체 기간의 성과를 '매년 같은 비율로 늘었다면'으로 바꿔 표시한 값.",
+        "Ann. vol": "연환산 변동성 — 일간 수익률의 흔들림을 1년 척도로 바꾼 값. 클수록 가격 흔들림이 큼.",
+        "Max drawdown": "최대 낙폭 — 과거의 고점에서 이후 저점까지 가장 크게 떨어진 비율. −50%면 절반으로 줄었다는 뜻.",
+        "Sharpe (rf=0)": "샤프 지수 — 가격 흔들림 대비 수익을 나타낸 값. 이 앱은 무위험 수익률을 0으로 가정.",
+        "adj_close": "조정 종가 — 배당과 주식 분할을 과거 가격에 반영해 장기 수익률 비교에 맞춘 가격.",
+        "cum_return": "누적수익률 — 시작일에 1을 투자했을 때 전체 기간에 얼마나 늘거나 줄었는지. 0.5는 +50%.",
+        "rolling_vol_30d": "30거래일 변동성 — 최근 약 한 달의 일간 수익률이 얼마나 크게 흔들렸는지 나타낸 값.",
+        "drawdown": "고점 대비 하락률 — 이전 최고 가격에서 현재 얼마나 내려왔는지. 0은 최고점, −0.12는 12% 아래.",
+    },
+}
+
+GLOSSARY_LABELS: dict[Language, dict[str, str]] = {
+    "en": {
+        "CAGR": "CAGR",
+        "Ann. vol": "Annualised volatility",
+        "Max drawdown": "Maximum drawdown",
+        "Sharpe (rf=0)": "Sharpe ratio",
+        "adj_close": "Adjusted close",
+        "cum_return": "Cumulative return",
+        "rolling_vol_30d": "30-trading-day volatility",
+        "drawdown": "Drawdown",
+    },
+    "ko": {
+        "CAGR": "연평균 복리수익률(CAGR)",
+        "Ann. vol": "연환산 변동성",
+        "Max drawdown": "최대 낙폭",
+        "Sharpe (rf=0)": "샤프 지수",
+        "adj_close": "조정 종가",
+        "cum_return": "누적수익률",
+        "rolling_vol_30d": "30거래일 변동성",
+        "drawdown": "고점 대비 하락률",
+    },
 }
 
 
-def glossary_expander(keys, title: str = "📖 Metrics guide") -> None:
-    """Render an expander explaining the given GLOSSARY terms."""
+def glossary_help(key: str, lang: Language) -> str:
+    """Return one glossary definition in the interface language."""
+    return GLOSSARIES[lang][key]
+
+
+def glossary_expander(keys, lang: Language, title: str = "📖 Metrics guide") -> None:
+    """Render an expander explaining metrics in the interface language."""
     with st.expander(title):
         for k in keys:
-            st.markdown(f"**{k}** — {GLOSSARY[k]}")
+            st.markdown(f"**{GLOSSARY_LABELS[lang][k]}** — {glossary_help(k, lang)}")
 
 
 # --------------------------------------------------------------------------
@@ -131,7 +173,7 @@ def _parquet_marts() -> tuple[pd.DataFrame, pd.DataFrame]:
     risk["rolling_vol_30d"] = grouped.transform(
         lambda s: s.pct_change().rolling(30, min_periods=2).std()
     )
-    risk["annualized_vol_30d"] = risk["rolling_vol_30d"] * (252 ** 0.5)
+    risk["annualized_vol_30d"] = risk["rolling_vol_30d"] * (252**0.5)
     risk["drawdown"] = grouped.transform(lambda s: s / s.cummax() - 1.0)
     return returns, risk
 
@@ -181,14 +223,24 @@ def load_dim_etf() -> pd.DataFrame:
         """
         return pd.read_sql(query, get_engine())
     dim = pd.read_csv(ROOT / "dbt" / "seeds" / "etf_info.csv")
-    return dim.sort_values(["asset_class", "sub_class", "ticker"]).reset_index(drop=True)
+    return dim.sort_values(["asset_class", "sub_class", "ticker"]).reset_index(
+        drop=True
+    )
 
 
-def demo_mode_banner() -> None:
+def demo_mode_banner(lang: Language = "en") -> None:
     """Small caption shown when running without a database."""
     if not warehouse_available():
-        st.caption(
-            "⚡ Demo mode — reading the bundled parquet fallback snapshot, which "
-            "may lag the market. Configure Postgres or run the Docker stack locally "
-            "for the current dbt warehouse."
-        )
+        messages = {
+            "en": (
+                "⚡ Demo mode — using the bundled parquet snapshot, which may lag "
+                "the market. Configure PostgreSQL or run the local Docker stack for "
+                "the current dbt warehouse."
+            ),
+            "ko": (
+                "⚡ 데모 모드 — 포함된 parquet 예시 데이터를 사용하므로 시장보다 "
+                "늦을 수 있습니다. 최신 dbt 분석 표를 사용하려면 PostgreSQL을 "
+                "설정하거나 로컬 Docker를 실행하세요."
+            ),
+        }
+        st.caption(messages[lang])

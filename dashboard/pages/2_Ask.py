@@ -28,29 +28,18 @@ for _p in (_ROOT / "dashboard", _ROOT / "qa"):
         sys.path.insert(0, str(_p))
 
 from db import PLOTLY_LAYOUT, warehouse_available  # noqa: E402
+from i18n import tr, ui_controls  # noqa: E402
 
-st.set_page_config(page_title="Ask", page_icon="💬", layout="wide")
-st.title("💬 Ask")
-st.caption(
-    "Ask **lookups, comparisons, rankings and relationships** over prices, returns, "
-    "volume, volatility, drawdown and ETF metadata — in English or Korean. "
-    "Predictions, investment advice and "
-    "backtest requests are politely refused. Generated SQL is validated with "
-    "sqlglot and executed by a read-only role."
-)
-st.caption(
-    "Relationship defaults: omitted period → trailing 1 year · generic ETF universe "
-    "→ unleveraged funds · volume → average daily dollar volume. State a period or "
-    "say ‘include leveraged ETFs’ to override."
-)
+lang = ui_controls()
+st.title(tr("ask.title", lang))
+st.caption(tr("ask.subtitle", lang))
+st.caption(tr("ask.defaults", lang))
+st.info(tr("ask.examples", lang))
 
 if not warehouse_available() or not os.getenv("GEMINI_API_KEY"):
-    st.warning(
-        "This page runs locally only — it needs the Docker Postgres marts and a "
-        "`GEMINI_API_KEY`.\n\n"
-        "`docker compose up -d` → ingest → `dbt run` → set the key in `.env`, then reload."
-    )
+    st.warning(tr("ask.unavailable", lang))
     st.stop()
+
 
 # Optional gate for public deployments: set ASK_PASSWORD (Streamlit secret or
 # env var) to require a password — protects the free LLM quota from strangers.
@@ -62,8 +51,8 @@ def _ask_password() -> str:
 
 
 if _pw := _ask_password():
-    if st.text_input("Access password", type="password") != _pw:
-        st.info("This public demo requires a password (it shares a free LLM quota).")
+    if st.text_input(tr("ask.password", lang), type="password") != _pw:
+        st.info(tr("ask.password_info", lang))
         st.stop()
 
 # The qa/ pipeline pulls in google-genai etc. If those aren't installed yet
@@ -82,15 +71,13 @@ try:
         auto_chart_spec,
         validate_spec,
     )
-    from presentation import is_percent_metric  # noqa: E402
+    from presentation import display_column_label, is_percent_metric  # noqa: E402
     from render import render  # noqa: E402
     from sql_guard import MAX_ROWS  # noqa: E402
 except ImportError as exc:
-    st.error(
-        "The Ask feature is temporarily unavailable — a dependency failed to load "
-        f"({exc.name}). If you just deployed, reboot the app so it reinstalls "
-        "requirements.txt (Manage app → Reboot)."
-    )
+    st.error(tr("ask.dependency_error", lang))
+    with st.expander(tr("ask.admin_error", lang)):
+        st.code(f"Missing dependency: {exc.name}")
     st.stop()
 
 LOG_PATH = _ROOT / "qa" / "logs" / "ask_ui.jsonl"
@@ -103,11 +90,9 @@ def _reader_ok() -> tuple[bool, str]:
 
 ok, why = _reader_ok()
 if not ok:
-    st.error(
-        "The read-only account (`etf_reader`) can't connect, so queries would fail. "
-        "Check that `QA_DB_PASSWORD` matches the password set in `scripts/init_db.sql`.\n\n"
-        f"Details: {why}"
-    )
+    st.error(tr("ask.database_error", lang))
+    with st.expander(tr("ask.admin_connection", lang)):
+        st.code(why)
     st.stop()
 
 
@@ -124,23 +109,37 @@ def cached_answer(question: str):
     return r
 
 
-def log_event(question: str, status: str, sql: str = "", n_rows=None, error: str = "", model: str = "") -> None:
+def log_event(
+    question: str,
+    status: str,
+    sql: str = "",
+    n_rows=None,
+    error: str = "",
+    model: str = "",
+) -> None:
     LOG_PATH.parent.mkdir(exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(json.dumps({
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "question": question, "status": status,
-            "sql": sql, "n_rows": n_rows, "error": error, "model": model,
-        }, ensure_ascii=False) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "question": question,
+                    "status": status,
+                    "sql": sql,
+                    "n_rows": n_rows,
+                    "error": error,
+                    "model": model,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
 
 
 def show_assistant(entry: dict, key: str) -> None:
     kind = entry["kind"]
     if kind == "refusal":
-        st.markdown(
-            f"⛔ {entry['text']}\n\n"
-            "_I can answer lookups, comparisons and rankings over the warehouse instead._"
-        )
+        st.markdown(f"⛔ {entry['text']}\n\n_{tr('ask.refusal_alternative', lang)}_")
     elif kind == "error":
         st.error(entry["text"])
     else:  # data
@@ -152,33 +151,33 @@ def show_assistant(entry: dict, key: str) -> None:
             # Unique key per message — identical charts across chat history would
             # otherwise collide on Streamlit's content-based element id.
             st.plotly_chart(fig, width="stretch", key=f"chart_{key}")
-        percent_columns = {
-            column: st.column_config.NumberColumn(format="percent")
+        question = entry.get("question", "")
+        table_columns = {
+            column: (
+                st.column_config.NumberColumn(
+                    display_column_label(column, question), format="percent"
+                )
+                if is_percent_metric(column)
+                else st.column_config.Column(display_column_label(column, question))
+            )
             for column in entry["df"].columns
-            if is_percent_metric(column)
         }
         st.dataframe(
             entry["df"],
             width="stretch",
             hide_index=True,
             key=f"df_{key}",
-            column_config=percent_columns,
+            column_config=table_columns,
         )
         if entry.get("truncated"):
-            st.warning(
-                f"Capped at {MAX_ROWS} rows — this result may be cut short. "
-                "Narrow the tickers or shorten the date range to see the full series."
-            )
-        with st.expander("Executed SQL"):
+            st.warning(tr("ask.truncated", lang, rows=MAX_ROWS))
+        with st.expander(tr("ask.sql", lang)):
             st.code(entry["safe_sql"], language="sql")
         if entry.get("chart_note"):
             st.caption(entry["chart_note"])
 
 
-st.caption(
-    "Auto view: time series → line · rankings/comparisons → bar · "
-    "relationships → scatter · everything else → table"
-)
+st.caption(tr("ask.auto_view", lang))
 
 if "chat" not in st.session_state:
     st.session_state.chat = []
@@ -190,33 +189,41 @@ for i, msg in enumerate(st.session_state.chat):
         else:
             show_assistant(msg, key=str(i))
 
-if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
+if question := st.chat_input(tr("ask.placeholder", lang)):
     st.session_state.chat.append({"role": "user", "text": question})
     with st.chat_message("user"):
         st.markdown(question)
 
-    with st.chat_message("assistant"), st.spinner("Thinking..."):
+    with st.chat_message("assistant"), st.spinner(tr("ask.spinner", lang)):
         try:
             r = cached_answer(question)
         except DailyQuotaError:
-            entry = {"role": "assistant", "kind": "error",
-                     "text": "Daily free-tier quota exhausted for all models — try again tomorrow."}
+            entry = {
+                "role": "assistant",
+                "kind": "error",
+                "text": tr("ask.quota_error", lang),
+            }
             log_event(question, "daily_quota")
         except ProviderUnavailableError:
             entry = {
                 "role": "assistant",
                 "kind": "error",
-                "text": (
-                    "The LLM provider is temporarily unavailable. I tried the configured "
-                    "fallback models; please try again in a few minutes."
-                ),
+                "text": tr("ask.provider_error", lang),
             }
             log_event(question, "provider_unavailable")
         except WarehouseSchemaError as e:
-            entry = {"role": "assistant", "kind": "error", "text": str(e)}
+            entry = {
+                "role": "assistant",
+                "kind": "error",
+                "text": tr("ask.schema_error", lang),
+            }
             log_event(question, "warehouse_schema", error=str(e))
         except Exception as e:  # noqa: BLE001
-            entry = {"role": "assistant", "kind": "error", "text": f"Something went wrong: {e}"}
+            entry = {
+                "role": "assistant",
+                "kind": "error",
+                "text": tr("ask.generic_error", lang),
+            }
             log_event(question, "error", error=str(e))
         else:
             if r.status in ("refused_gate", "refused_guard"):
@@ -230,20 +237,31 @@ if question := st.chat_input("e.g. How volatile was TLT over the past year?"):
                         fig = render(spec, r.df)
                         if fig is None:
                             if why := TABLE_FALLBACK_REASONS.get("last"):
-                                chart_note = f"Showing a table instead of a chart ({why})"
+                                chart_note = tr("ask.table_reason", lang, reason=why)
                             else:
-                                chart_note = "Table view selected automatically for this result."
+                                chart_note = tr("ask.table_auto", lang)
                     except Exception as e:  # noqa: BLE001 — chart failures must not kill the table
-                        chart_note = f"Chart generation failed, showing table: {e}"
+                        chart_note = tr("ask.chart_error", lang)
+                        log_event(question, "chart_error", error=str(e))
                 # getattr fallback: survives a stale in-memory ask.py after an
                 # auto-redeploy (module cached without the newer 'truncated' prop).
                 truncated = getattr(r, "truncated", None)
                 if truncated is None:
                     truncated = r.df is not None and len(r.df) >= MAX_ROWS
-                entry = {"role": "assistant", "kind": "data", "df": r.df,
-                         "explanation": r.explanation, "safe_sql": r.safe_sql,
-                         "fig": fig, "chart_note": chart_note, "truncated": truncated}
-                log_event(question, "answered", sql=r.safe_sql, n_rows=r.n_rows, model=r.model)
+                entry = {
+                    "role": "assistant",
+                    "kind": "data",
+                    "df": r.df,
+                    "explanation": r.explanation,
+                    "safe_sql": r.safe_sql,
+                    "fig": fig,
+                    "chart_note": chart_note,
+                    "truncated": truncated,
+                    "question": question,
+                }
+                log_event(
+                    question, "answered", sql=r.safe_sql, n_rows=r.n_rows, model=r.model
+                )
         # key = its future index in the chat list (append-only → stable across reruns)
         show_assistant(entry, key=str(len(st.session_state.chat)))
     st.session_state.chat.append(entry)

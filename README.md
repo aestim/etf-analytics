@@ -1,8 +1,50 @@
 # ETF Analytics Pipeline
 
-🔗 **Live app:** [etf-analytics-pipeline.streamlit.app](https://etf-analytics-pipeline.streamlit.app/) — daily-refreshed Streamlit deployment; the dashboard has a parquet fallback, while Ask uses the configured Postgres warehouse and Gemini API
+[![tests](https://github.com/aestim/etf-analytics/actions/workflows/test.yml/badge.svg)](https://github.com/aestim/etf-analytics/actions/workflows/test.yml)
+
+🔗 **Live app:** [etf-analytics-pipeline.streamlit.app](https://etf-analytics-pipeline.streamlit.app/) — refreshed after US trading days; the dashboard has a parquet fallback, while Ask uses the configured Postgres warehouse and Gemini API
 
 Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (17 tickers by default: US large/small-cap, dividend, international developed & emerging equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and a safety-gated **LLM-powered natural-language Q&A layer**. Formal golden-set evaluation is the remaining Q&A roadmap item.
+
+## Start here if you are not technical
+
+An **ETF** is a basket of investments that trades under a short code called a
+**ticker**. For example, `SPY` follows large US companies, `BND` represents a
+broad US bond basket, and `GLD` tracks gold.
+
+This project does four simple things:
+
+1. Downloads each ETF's daily market history.
+2. Cleans it and calculates return, price swings and the worst fall from a peak.
+3. Shows the results as charts and tables.
+4. Lets a person ask a Korean or English data question, such as
+   `지난 1년 수익률이 가장 높은 ETF 3개는?`
+
+It is an educational comparison tool, **not** a prediction service or a request
+to buy or sell an investment. The first dashboard view starts with three
+representative funds (`SPY`, `BND`, `GLD`) so a new reader is not confronted by
+17 overlapping lines at once.
+
+The interface opens in **English** for international portfolio review. A shared
+`English | 한국어` control in the sidebar switches all three pages for the current
+session, while the Ask answer itself follows the language of the question.
+
+## How the pieces connect
+
+```mermaid
+flowchart LR
+    A["Yahoo Finance<br/>daily prices"] --> B["Postgres<br/>stored history"]
+    B --> C["dbt<br/>clean analysis tables"]
+    C --> D["Streamlit<br/>dashboard"]
+    E["Korean or English<br/>question"] --> F["Gemini<br/>question to SQL"]
+    F --> G["SQL safety checks<br/>read-only access"]
+    G --> C
+    C --> H["Table or<br/>line / bar / scatter chart"]
+```
+
+The AI cannot write to the database and never runs generated Python code. It
+only proposes one read-only SQL query; ordinary code checks that query before
+execution.
 
 ## Business requirement
 
@@ -14,9 +56,9 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
 - **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
-- **Dashboard** — Streamlit multipage: price/return/volatility charts with a stable 24-color palette, an interactive ticker guide, and metric tooltips backed by a shared glossary
-- **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) backtested by pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
-- **Ask** — bilingual lookups, comparisons, rankings, and cross-ETF relationship analysis over the marts; deterministic charts and conclusion-first correlation summaries require no second LLM call
+- **Dashboard** — Streamlit multipage: English-first interface with a session-wide Korean switch, stable 24-color palette, interactive ticker guide, large-text option, and translated metric tooltips
+- **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) with a translated beginner reading order and pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
+- **Ask** — English/Korean lookups, comparisons, rankings, and cross-ETF relationship analysis over the marts; answer tables and deterministic chart titles/axes follow the question language, and conclusion-first correlation summaries require no second LLM call
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
 - **Demo mode** — with no database reachable, dashboard pages use a bundled parquet fallback snapshot and recompute the marts in pandas; Ask stays disabled until Postgres and Gemini are configured
 
@@ -30,6 +72,15 @@ Plain-language questions ("Which long-duration Treasury ETF had the lowest volat
 4. **Provider resilience** ✅ — stable model IDs (`gemini-3.1-flash-lite` → `gemini-3.5-flash`), a 20-second request timeout, bounded 429/5xx retries, jitter, and model failover prevent an endless Ask spinner
 
 Design principle: **the LLM emits structured JSON; generated SQL is parsed and validated before read-only execution, generated Python/plotting code is never executed, and chart selection requires no extra model call.**
+
+Example questions:
+
+- `최근 1년 수익률이 가장 높은 ETF 3개는?`
+- `QQQ와 IWM의 지난 10년 CAGR과 변동성을 비교해줘`
+- `수익률이 높은 ETF일수록 최대 낙폭도 큰가?`
+
+If the period is omitted, Ask uses the trailing one year. Questions that ask
+for a prediction, personal investment advice or unavailable data are refused.
 
 For generic cross-ETF relationships, Ask defaults to unleveraged funds so 2x/3x
 products do not dominate the result. Say “include leveraged ETFs” to override it.
@@ -51,7 +102,7 @@ etf-analytics/
 ├── dbt/                    # staging & mart models · seeds/etf_info.csv · tests
 ├── airflow/dags/           # etf_pipeline DAG
 ├── analytics/              # Pure strategy backtest functions (Strategy Lab)
-├── dashboard/              # Streamlit app · shared data/color helpers · Strategy Lab · Ask
+├── dashboard/              # Streamlit app · shared i18n/data/color helpers · Strategy Lab · Ask
 ├── qa/                     # Structured scope/SQL, safety guard, presentation and eval runner
 └── tests/                  # pytest: ingest · analytics · dashboard · Ask · SQL guard
 ```
@@ -111,21 +162,7 @@ Open http://localhost:8501 — dashboard on the home page, with **Strategy Lab**
 and **Ask** in the sidebar. Ask requires a reachable Postgres warehouse and
 `GEMINI_API_KEY`; the other pages retain their parquet fallback.
 
-## Screenshots
-
-### Dashboard — cross-asset view
-
-<img src="docs/images/dashboard-overview.png" alt="Dashboard: prices, cumulative returns, rolling volatility" width="850">
-
-### Ticker guide
-
-<img src="docs/images/ticker-guide.png" alt="Ticker guide: overview table with per-ticker detail card" width="850">
-
-### Strategy Lab
-
-<img src="docs/images/strategy-lab.png" alt="Strategy Lab: equity curves, drawdowns, and metrics" width="850">
-
-### Pipeline
+## Pipeline screenshots
 
 <img src="docs/images/airflow-dag.png" alt="Airflow etf_pipeline run, all tasks green" width="850">
 
