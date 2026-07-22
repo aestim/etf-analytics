@@ -42,6 +42,15 @@ def test_interface_copy_avoids_internal_or_translation_heavy_phrases():
     assert tr("ask.title", "ko") == "💬 ETF 정보 물어보기"
 
 
+def test_ask_copy_advertises_concepts_without_promising_investment_advice():
+    assert "positive correlation" in tr("ask.examples", "en")
+    assert "양의 상관관계" in tr("ask.examples", "ko")
+    assert "does not predict" in tr("ask.subtitle", "en")
+    assert "개인 투자 조언" in tr("ask.subtitle", "ko")
+    assert "AI key" in tr("ask.unavailable", "en")
+    assert "AI 키" in tr("ask.unavailable", "ko")
+
+
 def test_korean_ticker_explanations_cover_the_configured_universe():
     seed = pd.read_csv("dbt/seeds/etf_info.csv")
     assert set(TICKER_DESCRIPTIONS_KO) == set(seed["ticker"])

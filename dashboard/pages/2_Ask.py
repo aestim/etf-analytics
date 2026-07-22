@@ -41,9 +41,12 @@ st.caption(tr("ask.subtitle", lang))
 st.caption(tr("ask.defaults", lang))
 st.info(tr("ask.examples", lang))
 
-if not warehouse_available() or not os.getenv("GEMINI_API_KEY"):
+_ai_configured = bool(os.getenv("GEMINI_API_KEY"))
+_warehouse_configured = warehouse_available()
+if not _ai_configured:
     st.warning(tr("ask.unavailable", lang))
-    st.stop()
+elif not _warehouse_configured:
+    st.warning(tr("ask.data_unavailable", lang))
 
 
 # Optional gate for public deployments: set ASK_PASSWORD (Streamlit secret or
@@ -63,8 +66,10 @@ if _pw := _ask_password():
 # The qa/ pipeline pulls in google-genai etc. If those aren't installed yet
 # (e.g. Streamlit Cloud hasn't reinstalled requirements after a deploy), fail
 # gracefully with a clear message instead of a redacted crash page.
+_pipeline_imported = True
 try:
     from ask import (  # noqa: E402
+        DataUnavailableError,
         DailyQuotaError,
         ProviderUnavailableError,
         WarehouseSchemaError,
@@ -80,10 +85,10 @@ try:
     from render import render  # noqa: E402
     from sql_guard import MAX_ROWS  # noqa: E402
 except ImportError as exc:
+    _pipeline_imported = False
     st.error(tr("ask.dependency_error", lang))
     with st.expander(tr("ask.admin_error", lang)):
         st.code(f"Missing dependency: {exc.name}")
-    st.stop()
 
 LOG_PATH = _ROOT / "qa" / "logs" / "ask_ui.jsonl"
 
@@ -93,21 +98,26 @@ def _reader_ok() -> tuple[bool, str]:
     return reader_ping()
 
 
-ok, why = _reader_ok()
-if not ok:
-    st.error(tr("ask.database_error", lang))
-    with st.expander(tr("ask.admin_connection", lang)):
-        st.code(why)
-    st.stop()
+_ai_ready = _ai_configured and _pipeline_imported
+_data_ready = _ai_ready and _warehouse_configured
+if _data_ready:
+    ok, why = _reader_ok()
+    if not ok:
+        _data_ready = False
+        st.error(tr("ask.database_error", lang))
+        with st.expander(tr("ask.admin_connection", lang)):
+            st.code(why)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def cached_answer(question: str):
+def cached_answer(question: str, execute_data: bool):
     """Serve identical questions from cache for an hour; never cache errors."""
-    r = answer(question)
+    r = answer(question, execute_data=execute_data)
     if r.status == "error":
         if r.error_kind == "provider_unavailable":
             raise ProviderUnavailableError(r.reason)
+        if r.error_kind == "data_unavailable":
+            raise DataUnavailableError(r.reason)
         if r.error_kind == "warehouse_schema":
             raise WarehouseSchemaError(r.reason)
         raise RuntimeError(r.reason)  # st.cache_data does not store exceptions
@@ -143,7 +153,9 @@ def log_event(
 
 def show_assistant(entry: dict, key: str) -> None:
     kind = entry["kind"]
-    if kind == "refusal":
+    if kind == "concept":
+        st.markdown(f"💡 {entry['text']}")
+    elif kind == "refusal":
         st.markdown(f"⛔ {entry['text']}\n\n_{tr('ask.refusal_alternative', lang)}_")
     elif kind == "error":
         st.error(entry["text"])
@@ -201,8 +213,19 @@ if question := st.chat_input(tr("ask.placeholder", lang)):
         st.markdown(question)
 
     with st.chat_message("assistant"), st.spinner(tr("ask.spinner", lang)):
+        if not _ai_ready:
+            entry = {
+                "role": "assistant",
+                "kind": "error",
+                "text": tr("ask.unavailable", lang),
+            }
+            log_event(question, "ai_unavailable")
+            show_assistant(entry, key=str(len(st.session_state.chat)))
+            st.session_state.chat.append(entry)
+            st.stop()
+
         try:
-            r = cached_answer(question)
+            r = cached_answer(question, _data_ready)
         except DailyQuotaError:
             entry = {
                 "role": "assistant",
@@ -217,6 +240,13 @@ if question := st.chat_input(tr("ask.placeholder", lang)):
                 "text": tr("ask.provider_error", lang),
             }
             log_event(question, "provider_unavailable")
+        except DataUnavailableError:
+            entry = {
+                "role": "assistant",
+                "kind": "error",
+                "text": tr("ask.data_unavailable", lang),
+            }
+            log_event(question, "data_unavailable")
         except WarehouseSchemaError as e:
             entry = {
                 "role": "assistant",
@@ -232,7 +262,14 @@ if question := st.chat_input(tr("ask.placeholder", lang)):
             }
             log_event(question, "error", error=str(e))
         else:
-            if r.status in ("refused_gate", "refused_guard"):
+            if r.status == "explained":
+                entry = {
+                    "role": "assistant",
+                    "kind": "concept",
+                    "text": r.explanation,
+                }
+                log_event(question, "explained", model=r.model)
+            elif r.status in ("refused_gate", "refused_guard"):
                 entry = {"role": "assistant", "kind": "refusal", "text": r.reason}
                 log_event(question, r.status, sql=r.sql, model=r.model)
             else:

@@ -45,6 +45,63 @@ def test_answer_routes_and_generates_sql_in_one_model_call(
     assert len(direct_pipeline) == 1
 
 
+def test_answer_uses_one_model_call_for_concept_without_database(
+    monkeypatch, direct_pipeline
+):
+    monkeypatch.setattr(
+        ask,
+        "generate_sql",
+        lambda question: ask.SqlAnswer(
+            intent="concept_question",
+            sql="DROP TABLE users",
+            explanation=(
+                "양의 상관관계는 두 값이 같은 방향으로 움직이는 경향입니다. "
+                "상관관계만으로 원인을 판단할 수는 없습니다."
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        ask,
+        "run_readonly",
+        lambda sql: pytest.fail("A concept answer must not query the database"),
+    )
+
+    result = ask.answer("양의 상관관계가 뭐야?")
+
+    assert result.status == "explained"
+    assert result.model == "test-model"
+    assert "같은 방향" in result.explanation
+    assert "원인" in result.explanation
+    assert result.df is None
+    assert result.sql == ""
+    assert result.safe_sql == ""
+    assert len(direct_pipeline) == 1
+
+
+def test_answer_classifies_question_but_does_not_query_missing_database(monkeypatch):
+    monkeypatch.setattr(
+        ask,
+        "generate_sql",
+        lambda question: ask.SqlAnswer(
+            intent="data_query",
+            sql="SELECT ticker FROM public_marts.dim_etf",
+            explanation="Lists the included ETFs.",
+        ),
+    )
+    monkeypatch.setattr(
+        ask,
+        "run_readonly",
+        lambda sql: pytest.fail("Unavailable data must not be queried"),
+    )
+
+    result = ask.answer("어떤 ETF가 있어?", execute_data=False)
+
+    assert result.status == "error"
+    assert result.error_kind == "data_unavailable"
+    assert result.sql.startswith("SELECT ticker")
+    assert result.safe_sql == ""
+
+
 def test_answer_stops_at_out_of_scope_route(monkeypatch):
     monkeypatch.setattr(
         ask,

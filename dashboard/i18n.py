@@ -263,20 +263,24 @@ COPY: dict[str, dict[Language, str]] = {
     },
     "ask.title": {"en": "💬 Ask About ETFs", "ko": "💬 ETF 정보 물어보기"},
     "ask.subtitle": {
-        "en": "Ask in English or Korean about historical prices, returns, trading value, price swings, and drawdowns. Look up data, compare ETFs, view rankings, and explore relationships. This tool does not predict future returns or provide investment advice.",
-        "ko": "ETF의 과거 가격, 수익률, 거래대금, 가격 변동, 하락 폭을 한국어나 영어로 물어보세요. 데이터를 찾아보거나 ETF를 비교하고 순위와 관계를 살펴볼 수 있습니다. 미래 수익을 예측하거나 투자 조언을 하지는 않습니다.",
+        "en": "Ask in English or Korean about ETF and basic investing terms, or explore historical prices, returns, trading value, price swings, and drawdowns. This tool does not predict future returns or provide personal investment advice.",
+        "ko": "ETF와 기초 투자 용어의 뜻을 물어보거나 과거 가격, 수익률, 거래대금, 가격 변동, 하락 폭을 살펴보세요. 한국어와 영어 모두 사용할 수 있습니다. 미래 수익을 예측하거나 개인 투자 조언을 하지는 않습니다.",
     },
     "ask.defaults": {
         "en": "If you do not specify a period, the app uses the past year. Broad comparisons exclude leveraged ETFs unless you ask to include them. Volume means average daily trading value.",
         "ko": "기간을 말하지 않으면 최근 1년을 기준으로 봅니다. 여러 ETF를 폭넓게 비교할 때는 따로 요청하지 않는 한 레버리지 ETF를 제외합니다. 거래량 질문은 평균 일일 거래대금을 기준으로 답합니다.",
     },
     "ask.examples": {
-        "en": "Examples: `Which 3 ETFs had the highest return over the past year?` · `Did ETFs with higher returns also have deeper maximum drawdowns?`",
-        "ko": "예시: `최근 1년 수익률이 가장 높은 ETF 3개는?` · `수익률이 높은 ETF일수록 최대 낙폭도 큰가?`",
+        "en": "Examples: `What is positive correlation?` · `Which 3 ETFs had the highest return over the past year?` · `Did ETFs with higher returns also have deeper maximum drawdowns?`",
+        "ko": "예시: `양의 상관관계가 뭐야?` · `최근 1년 수익률이 가장 높은 ETF 3개는?` · `수익률이 높은 ETF일수록 최대 낙폭도 큰가?`",
     },
     "ask.unavailable": {
-        "en": "ETF questions are not available until the data service and AI key are configured. The other pages still work.\n\nLocal setup: `docker compose up -d` → ingest → `dbt run` → add `GEMINI_API_KEY` to `.env` → refresh",
-        "ko": "데이터 서비스와 AI 키가 설정될 때까지 ETF 질문 기능을 사용할 수 없습니다. 다른 화면은 계속 이용할 수 있습니다.\n\n로컬 설정: `docker compose up -d` → ingest → `dbt run` → `.env`에 `GEMINI_API_KEY` 추가 → 새로고침",
+        "en": "ETF questions are unavailable until the AI key is configured. The other pages still work.\n\nLocal setup: add `GEMINI_API_KEY` to `.env` → refresh",
+        "ko": "AI 키가 설정될 때까지 ETF 질문 기능을 사용할 수 없습니다. 다른 화면은 계속 이용할 수 있습니다.\n\n로컬 설정: `.env`에 `GEMINI_API_KEY` 추가 → 새로고침",
+    },
+    "ask.data_unavailable": {
+        "en": "I can explain ETF and basic investing terms right now, but historical data lookups and comparisons are temporarily unavailable.",
+        "ko": "지금은 ETF와 기초 투자 용어를 설명할 수 있지만, 과거 데이터 조회와 비교는 잠시 사용할 수 없습니다.",
     },
     "ask.password": {"en": "Demo password", "ko": "데모 접속 비밀번호"},
     "ask.password_info": {
@@ -284,24 +288,24 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "공용 AI 사용 한도를 보호하기 위해 비밀번호가 필요합니다.",
     },
     "ask.dependency_error": {
-        "en": "The question feature could not start. Try again in a moment. If you just deployed the app, restart it once. The other pages still work.",
-        "ko": "질문 기능을 시작하지 못했습니다. 잠시 후 다시 시도해주세요. 방금 배포했다면 앱을 한 번 재시작하세요. 다른 화면은 계속 이용할 수 있습니다.",
+        "en": "The question feature could not start. If you just deployed the app, restart it once. The other pages still work.",
+        "ko": "질문 기능을 시작하지 못했습니다. 방금 배포했다면 앱을 한 번 재시작하세요. 다른 화면은 계속 이용할 수 있습니다.",
     },
     "ask.admin_error": {
         "en": "Technical error details",
         "ko": "관리자용 상세 정보",
     },
     "ask.database_error": {
-        "en": "The data needed to answer questions is unavailable. Try again later or notify the administrator. The other pages still work.",
-        "ko": "질문에 필요한 데이터에 연결하지 못했습니다. 잠시 후 다시 시도하거나 관리자에게 알려주세요. 다른 화면은 계속 이용할 수 있습니다.",
+        "en": "Historical data is unavailable. Basic concept explanations still work. Try data questions again later or notify the administrator.",
+        "ko": "과거 데이터에 연결하지 못했습니다. 기초 개념 설명은 계속 사용할 수 있습니다. 데이터 질문은 잠시 후 다시 시도하거나 관리자에게 알려주세요.",
     },
     "ask.admin_connection": {
         "en": "Technical connection details",
         "ko": "관리자용 연결 상세",
     },
     "ask.refusal_alternative": {
-        "en": "Try asking me to look up historical data, compare ETFs, show rankings, or explore relationships.",
-        "ko": "대신 과거 데이터를 찾거나 ETF를 비교하고 순위와 관계를 살펴보는 질문을 해보세요.",
+        "en": "Try asking what an ETF term means, or ask me to look up historical data, compare ETFs, show rankings, or explore relationships.",
+        "ko": "ETF 용어의 뜻을 묻거나 과거 데이터를 찾고 ETF를 비교하는 질문을 해보세요.",
     },
     "ask.truncated": {
         "en": "Only {rows} rows are shown. Reduce the number of ETFs or shorten the period to see the full result.",
@@ -312,14 +316,14 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "실행한 조회문(SQL) 보기",
     },
     "ask.auto_view": {
-        "en": "The app automatically chooses the clearest table or chart for each answer.",
-        "ko": "답변마다 가장 알기 쉬운 표나 차트를 자동으로 골라 보여드립니다.",
+        "en": "Concept questions get a short explanation. For data questions, the app chooses the clearest table or chart.",
+        "ko": "개념 질문에는 짧은 설명으로 답하고, 데이터 질문에는 가장 알기 쉬운 표나 차트를 골라 보여드립니다.",
     },
     "ask.placeholder": {
         "en": "e.g. How much did TLT swing over the past year?",
         "ko": "예: 최근 1년 동안 TLT는 얼마나 흔들렸어?",
     },
-    "ask.spinner": {"en": "Looking up the data...", "ko": "데이터를 찾는 중..."},
+    "ask.spinner": {"en": "Preparing the answer...", "ko": "답변을 준비하는 중..."},
     "ask.quota_error": {
         "en": "Today's free AI quota has been exhausted. Please try again tomorrow.",
         "ko": "오늘 사용할 수 있는 무료 AI 질문 횟수를 모두 썼습니다. 내일 다시 시도해주세요.",

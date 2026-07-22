@@ -74,6 +74,15 @@ def test_known_relationship_questions_are_canonical_examples():
     assert "AVG(m.annualized_vol_30d)" in SQL_SYSTEM_PROMPT
 
 
+def test_prompt_routes_general_concepts_without_sql_or_investment_advice():
+    assert 'intent="concept_question"' in SQL_SYSTEM_PROMPT
+    assert "양의 상관관계가 뭐야?" in SQL_SYSTEM_PROMPT
+    assert "Why do bond prices generally fall" in SQL_SYSTEM_PROMPT
+    assert "Set sql=\"\"" in SQL_SYSTEM_PROMPT
+    assert "General educational\n  \"why\" questions" in SQL_SYSTEM_PROMPT
+    assert "personal investment advice" in SQL_SYSTEM_PROMPT
+
+
 def test_long_term_performance_uses_cagr_policy():
     assert "performance windows of 2 years or longer" in SQL_SYSTEM_PROMPT
     assert "365.25 / NULLIF(MAX(price_date) - MIN(price_date), 0)" in SQL_SYSTEM_PROMPT
