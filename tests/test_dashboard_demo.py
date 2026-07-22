@@ -79,6 +79,7 @@ def test_shared_plotly_layout_keeps_mobile_plot_area_for_the_chart():
     margin = db.PLOTLY_LAYOUT["margin"]
 
     assert legend["orientation"] == "h"
+    assert legend["y"] <= -0.20
     assert legend["font"]["size"] >= 14
     assert margin["r"] <= 20
     assert db.PLOTLY_LAYOUT["font"]["size"] >= 15

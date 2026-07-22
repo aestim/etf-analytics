@@ -30,7 +30,7 @@ PLOTLY_LAYOUT = dict(
     legend=dict(
         orientation="h",
         yanchor="top",
-        y=-0.16,
+        y=-0.20,
         xanchor="left",
         x=0,
         font=dict(size=14),

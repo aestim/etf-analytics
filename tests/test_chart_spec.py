@@ -73,6 +73,20 @@ def test_table_spec_renders_none(df):
     assert render(ChartSpec(chart_type="table"), df) is None
 
 
+def test_time_series_line_omits_redundant_date_axis_title(df):
+    fig = render(
+        ChartSpec(
+            chart_type="line",
+            x="price_date",
+            y="rolling_vol_30d",
+            group_by="ticker",
+        ),
+        df,
+    )
+
+    assert fig.layout.xaxis.title.text == ""
+
+
 def test_return_chart_uses_percentage_axis():
     returns = pd.DataFrame({"ticker": ["SPY", "QQQ"], "cumulative_return": [0.12, 0.2]})
     fig = render(

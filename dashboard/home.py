@@ -68,6 +68,9 @@ def line_chart(
     if y in {"cum_return", "rolling_vol_30d"}:
         fig.update_yaxes(tickformat=".1%")
     fig.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
+    # Date ticks already make the horizontal scale clear. Omitting the
+    # redundant axis title keeps it from colliding with the mobile legend.
+    fig.update_xaxes(title_text="")
     st.plotly_chart(fig, width="stretch")
 
 

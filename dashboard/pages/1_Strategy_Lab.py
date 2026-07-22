@@ -120,6 +120,7 @@ fig = px.line(
     },
 )
 fig.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
+fig.update_xaxes(title_text="")
 st.plotly_chart(fig, width="stretch")
 
 st.subheader(tr("strategy.drawdown_title", lang))
@@ -140,6 +141,7 @@ fig_dd = px.line(
     },
 )
 fig_dd.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
+fig_dd.update_xaxes(title_text="")
 fig_dd.update_yaxes(tickformat=".0%")
 st.plotly_chart(fig_dd, width="stretch")
 

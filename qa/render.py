@@ -44,6 +44,10 @@ def render(spec: ChartSpec, df: pd.DataFrame):
         kwargs["title"] = spec.title
     renderers = {"line": px.line, "bar": px.bar, "scatter": px.scatter}
     fig = renderers[spec.chart_type](df, **kwargs)
+    if spec.chart_type == "line" and spec.x and "date" in spec.x.lower():
+        # Date ticks are self-explanatory and the title otherwise competes
+        # with a wrapped legend on narrow screens.
+        fig.update_xaxes(title_text="")
     if spec.chart_type == "scatter" and is_percent_metric(spec.x):
         fig.update_xaxes(tickformat=".1%")
     if spec.chart_type == "scatter" and is_dollar_metric(spec.x):
