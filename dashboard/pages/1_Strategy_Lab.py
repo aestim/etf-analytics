@@ -284,7 +284,7 @@ def _allocation_inputs(
     }
 
 
-def _plan_inputs(prefix: str, lang: str) -> tuple[int, bool]:
+def _plan_inputs(prefix: str, lang: str, ticker_count: int) -> tuple[int, bool]:
     method = st.segmented_control(
         tr("simulation.plan_method", lang),
         options=["lump", "staged"],
@@ -304,11 +304,18 @@ def _plan_inputs(prefix: str, lang: str) -> tuple[int, bool]:
             ),
             key=f"{prefix}_months",
         )
+    rebalance_key = f"{prefix}_rebalance"
+    rebalance_disabled = ticker_count < 2
+    if rebalance_disabled and st.session_state.get(rebalance_key):
+        st.session_state[rebalance_key] = False
     rebalance = st.toggle(
         tr("simulation.plan_rebalance", lang),
         help=tr("simulation.plan_rebalance_help", lang),
-        key=f"{prefix}_rebalance",
+        disabled=rebalance_disabled,
+        key=rebalance_key,
     )
+    if rebalance_disabled:
+        st.caption(tr("simulation.plan_single_etf", lang))
     return months, rebalance
 
 
@@ -538,7 +545,9 @@ def _render_custom_simulator(
     )
 
     st.markdown(f"#### {tr('simulation.plan_title', lang)}")
-    primary_months, primary_rebalance = _plan_inputs("simulation", lang)
+    primary_months, primary_rebalance = _plan_inputs(
+        "simulation", lang, len(primary_tickers)
+    )
     plans = [
         PortfolioPlan(
             name=tr("simulation.my_strategy", lang),
@@ -579,7 +588,7 @@ def _render_custom_simulator(
             return
         second_tickers, second_weights = second_allocation
         second_months, second_rebalance = _plan_inputs(
-            "simulation_second", lang
+            "simulation_second", lang, len(second_tickers)
         )
         plans.append(
             PortfolioPlan(

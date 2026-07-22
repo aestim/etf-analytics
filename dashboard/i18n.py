@@ -305,6 +305,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "At the first available trading date each year, restore the selected ETF weights. Money reserved for future staged purchases stays in cash.",
         "ko": "매년 첫 거래일에 선택한 ETF 비중으로 되돌립니다. 나중에 나눠 투자할 예정인 현금은 미리 투자하지 않습니다.",
     },
+    "simulation.plan_single_etf": {
+        "en": "Rebalancing is unavailable because one ETF has no allocation to restore.",
+        "ko": "ETF가 1개면 다시 맞출 비중이 없어 리밸런싱을 적용하지 않습니다.",
+    },
     "simulation.plan_staged_summary": {
         "en": "spread over {months} months",
         "ko": "{months}개월 나눠 투자",
