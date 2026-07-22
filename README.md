@@ -13,12 +13,12 @@ Automated daily ingestion and analytics for a configurable **cross-asset ETF uni
 - **Ingest** — yfinance daily prices (10-year window, one batched request for the whole universe), parquet landing zone + idempotent Postgres upsert; universe is env-driven (`ETF_TICKERS`)
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
 - **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
-- **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that commits parquet snapshots
+- **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
 - **Dashboard** — Streamlit multipage: price/return/volatility charts with a stable 24-color palette, an interactive ticker guide, and metric tooltips backed by a shared glossary
 - **Strategy Lab** — five classic strategies (buy & hold, monthly DCA, 60/40 rebalance, SMA-200 trend, simplified "infinite buying" cycle on a leveraged ETF) backtested by pure, pytest-covered functions: equity curves, drawdown view, CAGR/vol/MDD/Sharpe
 - **Ask** — bilingual lookups, comparisons, rankings, and cross-ETF relationship analysis over the marts; deterministic charts and conclusion-first correlation summaries require no second LLM call
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
-- **Demo mode** — with no database reachable, the dashboard pages fall back to the parquet snapshots committed by CI and recompute the marts in pandas; Ask stays disabled until Postgres and Gemini are configured
+- **Demo mode** — with no database reachable, dashboard pages use a bundled parquet fallback snapshot and recompute the marts in pandas; Ask stays disabled until Postgres and Gemini are configured
 
 ## LLM Q&A layer
 
@@ -47,7 +47,7 @@ etf-analytics/
 ├── docs/                   # architecture.md · data-dictionary.md · images/
 ├── docker-compose.yml      # Postgres + Airflow
 ├── ingest/                 # fetch_prices.py (env-driven universe) · transform.py
-├── data/raw/               # Parquet landing zone (partitioned by ticker/date)
+├── data/raw/               # Local landing zone + bundled fallback snapshot
 ├── dbt/                    # staging & mart models · seeds/etf_info.csv · tests
 ├── airflow/dags/           # etf_pipeline DAG
 ├── analytics/              # Pure strategy backtest functions (Strategy Lab)
@@ -137,10 +137,17 @@ Code validation: [`.github/workflows/test.yml`](.github/workflows/test.yml) — 
 every main push and pull request, runs the project pytest suite and a separate
 `dbt parse` job. Superseded runs on the same branch are cancelled.
 
-Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices on weekdays after US close and commits parquet to `data/raw/`. If pushes fail with a 403, set **Settings → Actions → Workflow permissions → Read and write**.
+Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches prices on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build` against the configured cloud warehouse. It has read-only repository permission and never commits or pushes to `main`.
 
 A manual dispatch can set `dbt_only=true` to rebuild the cloud marts from the
-existing raw warehouse without fetching or committing an intraday price snapshot.
+existing raw warehouse without fetching prices.
+
+### Repository data policy
+
+- `main` contains code, documentation, and a bundled parquet fallback snapshot; scheduled jobs do not mutate it.
+- Local ingest still writes ignored files under `data/raw/` for Docker development.
+- Cloud ingest writes its temporary parquet outside the checkout, upserts the managed Postgres raw table, and rebuilds dbt marts.
+- The bundled snapshot is a resilience/demo fallback, not the source of current production data. Refresh it only as an intentional, reviewed code change.
 
 ### Optional: cloud warehouse (full mode online)
 
@@ -149,7 +156,7 @@ is enabled only in full mode. To run Postgres-backed marts online, use a managed
 Postgres plan that fits the workload (free-tier limits and pricing may change):
 
 1. Create a free managed Postgres (e.g. [Neon](https://neon.tech) or [Supabase](https://supabase.com)) and apply `scripts/init_db.sql` once (creates `raw.etf_prices` and the read-only `etf_reader` role)
-2. Add repo **Actions secrets**: `POSTGRES_HOST`, `POSTGRES_PASSWORD` (and `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` if they differ from the defaults) — the daily workflow then upserts prices **and runs `dbt seed/run/test`** against the cloud warehouse
+2. Add repo **Actions secrets**: `POSTGRES_HOST`, `POSTGRES_PASSWORD` (and `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` if they differ from the defaults) — these are required by the daily workflow, which upserts prices and runs `dbt build` against the cloud warehouse
 3. Add the same values to **Streamlit Cloud secrets** — the app detects the warehouse and switches out of demo mode automatically (no code change; that's the fallback design paying off)
 4. Add `GEMINI_API_KEY` to Streamlit secrets to enable the **Ask** page online. Set `ASK_PASSWORD` before exposing it publicly so anonymous visitors cannot consume the shared LLM quota
 

@@ -38,7 +38,7 @@ st.set_page_config(
 st.title("ETF Analytics")
 st.caption(
     "Cross-asset ETF universe (set via ETF_TICKERS) · "
-    "Data: `public_marts` (dbt) · Refreshed on page load"
+    "Data: `public_marts` when configured · bundled parquet fallback otherwise"
 )
 
 try:

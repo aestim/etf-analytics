@@ -11,9 +11,8 @@ on:
         default: false
         type: boolean
 
-# Required for git push from Actions (Settings → Actions → Workflow permissions → Read and write)
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: daily-ingest-${{ github.ref }}
@@ -24,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # Optional cloud warehouse (e.g. Neon/Supabase free Postgres).
-    # Set the POSTGRES_* repo secrets to enable; leave unset for parquet-only.
+    # Scheduled ingest is warehouse-backed. Repository parquet is a bundled
+    # fallback snapshot and is intentionally not mutated by automation.
     env:
       POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
       POSTGRES_PORT: ${{ secrets.POSTGRES_PORT || '5432' }}
@@ -38,7 +37,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -49,42 +48,31 @@ jobs:
             ingest/requirements.txt
             airflow/requirements.txt
 
+      - name: Validate cloud warehouse configuration
+        run: |
+          if [ -z "$POSTGRES_HOST" ] || [ -z "$POSTGRES_PASSWORD" ]; then
+            echo "::error::POSTGRES_HOST and POSTGRES_PASSWORD are required for scheduled ingest"
+            exit 1
+          fi
+
       - name: Install dependencies
         if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
         run: pip install -r ingest/requirements.txt
 
-      - name: Fetch prices (writes parquet; upserts warehouse when secrets are set)
+      - name: Fetch prices and upsert cloud warehouse
         if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
         run: python ingest/fetch_prices.py
         env:
-          RAW_DATA_DIR: data/raw
+          # fetch_prices keeps its local raw-file contract, but CI writes outside
+          # the checkout so the repository remains code-only.
+          RAW_DATA_DIR: ${{ runner.temp }}/etf-raw
           ETF_TICKERS: SGOV,VGIT,TLT,BND,LQD,HYG,TIP,SPY,QQQ,QLD,TQQQ,VEA,SCHD,VWO,IWM,VNQ,GLD
           FETCH_PERIOD: 10y
 
       - name: dbt build against cloud warehouse
-        if: env.POSTGRES_HOST != ''
         run: |
           pip install -r airflow/requirements.txt
           cd dbt
           cp profiles.yml.example profiles.yml  # profiles.yml is gitignored; env-driven anyway
           dbt deps
           dbt build --profiles-dir .
-
-      - name: Commit and push raw data
-        if: github.event_name != 'workflow_dispatch' || inputs.dbt_only != true
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # data/raw/*.parquet is gitignored locally; force-add CI snapshots
-          if find data/raw -name '*.parquet' | grep -q .; then
-            find data/raw -name '*.parquet' -print0 | xargs -0 git add -f
-          fi
-
-          if git diff --staged --quiet; then
-            echo "No raw data changes to commit"
-            exit 0
-          fi
-
-          git commit -m "chore: daily ingest $(date -u +%Y-%m-%d)"
-          git push origin "HEAD:${GITHUB_REF_NAME}"

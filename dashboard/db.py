@@ -2,8 +2,9 @@
 Shared data access for the Streamlit dashboard (all pages).
 
 Primary source: PostgreSQL marts (local Docker stack).
-Fallback ("demo mode"): parquet snapshots committed under data/raw/ —
-lets the app run on Streamlit Community Cloud with no database.
+Fallback ("demo mode"): a bundled parquet snapshot under data/raw/ —
+lets the app run on Streamlit Community Cloud with no database. Scheduled
+automation does not mutate this repository snapshot.
 The mart logic is mirrored in pandas so both modes show the same metrics.
 """
 
@@ -93,7 +94,7 @@ def warehouse_available() -> bool:
 
 
 def _read_latest_snapshots() -> pd.DataFrame:
-    """Latest dt= partition per ticker from data/raw (committed daily by CI)."""
+    """Latest bundled dt= partition per ticker from data/raw."""
     raw = ROOT / "data" / "raw"
     frames = []
     if raw.exists():
@@ -187,7 +188,7 @@ def demo_mode_banner() -> None:
     """Small caption shown when running without a database."""
     if not warehouse_available():
         st.caption(
-            "⚡ Demo mode — reading parquet snapshots committed to the repo "
-            "(refreshed daily by GitHub Actions). Run the Docker stack locally "
-            "for the full Postgres + dbt warehouse."
+            "⚡ Demo mode — reading the bundled parquet fallback snapshot, which "
+            "may lag the market. Configure Postgres or run the Docker stack locally "
+            "for the current dbt warehouse."
         )

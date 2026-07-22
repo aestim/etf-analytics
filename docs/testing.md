@@ -9,13 +9,13 @@ that need a live data warehouse or an external provider.
 | Static error checks | `ruff check --select E9,F63,F7,F82 .` | syntax errors, undefined names, and invalid control flow, including paths a unit test may not execute | Cheap complement to runtime tests |
 | dbt parse | `dbt deps && dbt parse` | model SQL, refs, macros, YAML tests, and project configuration compile correctly | No database or repository secrets required on pull requests |
 | dbt data tests | scheduled `Daily ETF ingest` when `POSTGRES_HOST` is configured | nulls, uniqueness, relationships, return anomaly bounds, and mart recency against real data | These assertions require a populated warehouse and cannot be replaced by parse |
-| External ingest smoke test | scheduled `Daily ETF ingest` | Yahoo returns data for every configured ticker and snapshots can be written | Network-dependent by nature, so it is kept out of pull-request pytest |
+| External ingest smoke test | scheduled `Daily ETF ingest` | Yahoo returns data for every configured ticker and the cloud raw table accepts the upsert | Network-dependent by nature, so it is kept out of pull-request pytest |
 
 ## CI policy
 
 - `.github/workflows/test.yml` runs on pull requests, code/config pushes to `main`, and manual dispatch.
-- A push that changes only `data/raw/**` is produced by the scheduled ingest and
-  does not rerun pytest/dbt parse because no executable code changed.
+- Scheduled ingest has read-only repository permission. It writes temporary
+  parquet outside the checkout and refreshes Postgres/dbt without creating a Git commit.
 - Superseded runs on the same branch are cancelled; both jobs have bounded timeouts.
 - CI and the Airflow/daily-ingest runtime use Python 3.11.
 - Gemini is always mocked in pytest. The normal scope-routing + SQL call and
@@ -23,7 +23,8 @@ that need a live data warehouse or an external provider.
   live model calls would spend quota and make
   CI depend on provider capacity, so they belong in the separately reviewed eval run.
 - Pull-request CI does not connect to Postgres. The SQL guard and orchestration are
-  tested offline; live dbt assertions run in the scheduled workflow when secrets exist.
+  tested offline; live dbt assertions run in the scheduled workflow, whose warehouse
+  secrets are required and validated before ingest.
 
 The quota-aware `qa/run_week2.py` set keeps semantic regressions that offline
 tests cannot prove: explicit past-10-year queries must execute, descriptive

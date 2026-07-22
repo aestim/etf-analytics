@@ -65,8 +65,9 @@ flowchart LR
 ## LLM Q&A layer — security path
 
 Natural-language questions never reach the database as free text. Every request
-passes through a fixed chain where **the LLM only emits structured JSON — it
-never executes code**, and each stage can reject the request.
+passes through a fixed chain where **the LLM only emits structured JSON**. The
+application validates generated SQL before executing it through a read-only
+role; generated Python or plotting code is never executed.
 
 ```mermaid
 flowchart LR
@@ -118,7 +119,8 @@ DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
 | Environment | Raw storage | Warehouse | Orchestration |
 |-------------|-------------|-----------|---------------|
 | Local (this repo) | `data/raw/` | Docker Postgres | Docker Airflow |
-| Cloud demo (live) | `data/raw/` committed by CI | Managed Postgres (Neon/Supabase, optional) | GitHub Actions (`daily_ingest.yml`) |
+| Cloud full mode (live) | Managed Postgres `raw.etf_prices` | Managed Postgres marts | GitHub Actions (`daily_ingest.yml`) |
+| Dashboard fallback | Bundled `data/raw/` snapshot | pandas mart mirror | Streamlit only; intentionally not scheduled |
 | Production-style | S3 `s3://bucket/raw/etf/` | RDS Postgres | Managed Airflow / MWAA |
 
 ## Security & config

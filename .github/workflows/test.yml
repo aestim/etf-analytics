@@ -1,12 +1,9 @@
 name: tests
 
-# Code validation on every push / PR — separate from the daily data ingest.
+# Code validation on every push / PR — scheduled ingest no longer writes Git.
 on:
   push:
     branches: [main]
-    # The scheduled ingest only updates snapshots; code/dbt are unchanged.
-    paths-ignore:
-      - 'data/raw/**'
   pull_request:
   workflow_dispatch:
 
