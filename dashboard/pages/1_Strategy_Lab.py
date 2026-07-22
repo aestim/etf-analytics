@@ -41,6 +41,25 @@ def _money(value: float, lang: str) -> str:
     return f"{sign}${abs(value):,.0f}"
 
 
+def _compact_money(value: float, lang: str) -> str:
+    """Keep large reference-table values readable without hiding magnitude."""
+
+    magnitude = abs(value)
+    if lang == "ko":
+        if magnitude >= 100_000_000:
+            return f"{value / 100_000_000:,.2f}조원"
+        if magnitude >= 10_000:
+            return f"{value / 10_000:,.2f}억원"
+        return f"{value:,.0f}만원"
+    if magnitude >= 1_000_000_000_000:
+        return f"${value / 1_000_000_000_000:,.2f}T"
+    if magnitude >= 1_000_000_000:
+        return f"${value / 1_000_000_000:,.2f}B"
+    if magnitude >= 1_000_000:
+        return f"${value / 1_000_000:,.2f}M"
+    return _money(value, lang)
+
+
 def _percent(value: float) -> str:
     return f"{value:.1%}"
 
@@ -159,11 +178,27 @@ def _render_result_tables(
     for label in labels:
         st.markdown(f"**{label}**")
         table = _result_table(label, metrics, lang)
+        metric_column = tr("simulation.metric", lang)
+        value_column = tr("simulation.value", lang)
+        table_key = (
+            f"simulation_result_{lang}_{label}_"
+            f"{metrics[label]['final_value']:.6f}_"
+            f"{metrics[label]['max_drawdown']:.6f}"
+        )
         st.dataframe(
             table,
             width=dataframe_width(table),
             row_height=DATAFRAME_ROW_HEIGHT,
             hide_index=True,
+            key=table_key,
+            column_config={
+                metric_column: st.column_config.TextColumn(
+                    metric_column, width=145
+                ),
+                value_column: st.column_config.TextColumn(
+                    value_column, width=195
+                ),
+            },
         )
 
 
@@ -270,18 +305,19 @@ def _render_reference_comparison(
     )
     labels = {"custom": custom_label, **labels}
 
+    rule_column = tr("strategy.rule", lang)
+    final_value_column = tr("simulation.final_value", lang)
+    drawdown_column = tr("simulation.max_drawdown", lang)
     rows = []
     for key, curve in curves.items():
         metrics = _curve_metrics(curve)
         rows.append(
             {
-                tr("strategy.rule", lang): labels[key],
-                tr("simulation.final_value", lang): _money(
+                rule_column: labels[key],
+                final_value_column: _compact_money(
                     metrics["final_value"], lang
                 ),
-                tr("simulation.max_drawdown", lang): _percent(
-                    metrics["max_drawdown"]
-                ),
+                drawdown_column: _percent(metrics["max_drawdown"]),
             }
         )
     reference_table = pd.DataFrame(rows)
@@ -298,6 +334,19 @@ def _render_reference_comparison(
         width=dataframe_width(reference_table),
         row_height=DATAFRAME_ROW_HEIGHT,
         hide_index=True,
+        key=(
+            f"simulation_reference_table_{lang}_{total_capital:g}_"
+            f"{start:%Y%m%d}_{end:%Y%m%d}_{comparison}_{staged_months}"
+        ),
+        column_config={
+            rule_column: st.column_config.TextColumn(rule_column, width=170),
+            final_value_column: st.column_config.TextColumn(
+                final_value_column, width=100
+            ),
+            drawdown_column: st.column_config.TextColumn(
+                drawdown_column, width=85
+            ),
+        },
     )
 
     selected_examples = st.multiselect(

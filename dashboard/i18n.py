@@ -228,12 +228,12 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "QQQ 가격이 200일 평균보다 높으면 보유하고 낮으면 현금으로 둡니다. 긴 하락을 피하려 하지만 방향이 자주 바뀌면 반복 손실이 날 수 있습니다. 신호는 다음 날 반영합니다.",
     },
     "strategy.split_name": {
-        "en": "Buy in stages, sell after a 10% gain (TQQQ)",
-        "ko": "나눠 사고 10% 오르면 매도 (TQQQ)",
+        "en": "Infinite Buying Strategy: staged buys, sell at a 10% gain (TQQQ)",
+        "ko": "무한매수법: 나눠 사고 10% 오르면 매도 (TQQQ)",
     },
     "strategy.split_short": {
-        "en": "Split buys · TQQQ",
-        "ko": "분할매수 · TQQQ",
+        "en": "Infinite Buying · TQQQ",
+        "ko": "무한매수법 · TQQQ",
     },
     "strategy.split_note": {
         "en": "Split capital into 40 daily buys and sell all at 10% above average cost. Each cycle's gain is capped, while crash risk remains after cash runs out.",
@@ -379,7 +379,7 @@ COPY: dict[str, dict[Language, str]] = {
     "simulation.profit": {"en": "Gain or loss", "ko": "번 돈 또는 잃은 돈"},
     "simulation.total_return": {"en": "Total return", "ko": "총수익률"},
     "simulation.max_drawdown": {
-        "en": "Largest drop",
+        "en": "Worst drop",
         "ko": "최대 하락",
     },
     "simulation.annualized_vol": {
@@ -415,12 +415,12 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "필요한 ETF의 과거 데이터가 없어 선택한 전체 기간으로 예시 전략 5개를 비교할 수 없습니다.",
     },
     "simulation.my_staged": {
-        "en": "My portfolio · {months}-month staged entry",
-        "ko": "내 포트폴리오 · {months}개월 분할",
+        "en": "My portfolio · {months} months",
+        "ko": "내 포트폴리오 · {months}개월",
     },
     "simulation.my_rebalanced": {
-        "en": "My portfolio · yearly rebalancing",
-        "ko": "내 포트폴리오 · 매년 리밸런싱",
+        "en": "My portfolio · rebalanced",
+        "ko": "내 포트폴리오 · 리밸런싱",
     },
     "simulation.assumptions_title": {
         "en": "Calculation assumptions",

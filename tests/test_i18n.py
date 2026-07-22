@@ -29,6 +29,11 @@ def test_translation_lookup_keeps_each_interface_language_separate():
     assert tr("ask.truncated", "en", rows=200).startswith("Only 200 rows")
 
 
+def test_infinite_buying_strategy_is_not_labeled_as_generic_split_buying():
+    assert tr("strategy.split_short", "ko") == "무한매수법 · TQQQ"
+    assert tr("strategy.split_short", "en") == "Infinite Buying · TQQQ"
+
+
 def test_interface_copy_avoids_internal_or_translation_heavy_phrases():
     all_messages = "\n".join(
         message for translations in COPY.values() for message in translations.values()
