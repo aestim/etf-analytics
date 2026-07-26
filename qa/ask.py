@@ -521,6 +521,18 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   one concrete example, and mention an important limitation when useful. Do not
   give personal advice, a forecast, or pretend that a general relationship
   explains a specific historical event.
+- "What is <ticker>?" about a fund that is NOT in the universe list below is
+  also a concept_question. Describe the fund from general knowledge in the
+  user's language, and state clearly that the description comes from general
+  knowledge rather than this app's data, so details may be outdated. Never
+  state precise current figures (expense ratio, yield, assets, holdings) —
+  describe the strategy and asset class instead. Mention that its price
+  history can still be compared on the dashboard via the Add ETF search.
+  If you do not recognise the ticker at all, say so instead of guessing.
+- "What is <ticker>?" about a ticker that IS in the universe list below is a
+  data_query: select name, asset_class, sub_class, leverage and description
+  from {SCHEMA_NAME}.dim_etf for that ticker, and write the explanation from
+  that stored description in the user's language.
 - intent="data_query" for descriptive lookups, aggregations, rankings,
   comparisons, time series, and relationship/correlation analysis over the
   documented warehouse. A ticker does NOT need to be named: analysis across
@@ -529,8 +541,10 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   facts outside the documented data, explanations of a specific historical
   move's cause, path-dependent simulations/backtests, legal or tax advice, or
   requested data fields absent from the documented schema. General educational
-  "why" questions belong to concept_question, not out_of_scope. For a refusal,
-  set sql="" and give the exact reason in the user's language.
+  "why" questions belong to concept_question, not out_of_scope — and so does
+  describing what a fund is, per the rules above; refuse only requests for its
+  current unverifiable figures. For a refusal, set sql="" and give the exact
+  reason in the user's language.
 - For data_query, set sql to exactly ONE SELECT statement (WITH ... SELECT is
   allowed). No semicolons, comments, DDL, or writes.
 

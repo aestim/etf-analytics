@@ -29,6 +29,30 @@ def test_default_ranking_requires_enough_observations():
     assert "COUNT(*) - 1 >= 200" in SQL_SYSTEM_PROMPT
 
 
+def test_ticker_definitions_have_one_policy_per_side_of_the_universe():
+    """"What is SGOV?" reads the stored description; "What is JEPQ?" is answered
+    from general knowledge, labelled as such, instead of being refused."""
+    # In-universe: grounded in dim_etf, not the model's memory.
+    assert "IS in the universe list below is a\n  data_query" in SQL_SYSTEM_PROMPT
+    assert "that stored description in the user's language" in SQL_SYSTEM_PROMPT
+    # Out-of-universe: general knowledge with an explicit provenance caveat,
+    # no invented figures, and a pointer to the Add ETF search.
+    assert "NOT in the universe list below" in SQL_SYSTEM_PROMPT
+    assert "general\n  knowledge rather than this app's data" in SQL_SYSTEM_PROMPT
+    assert "Never\n  state precise current figures" in SQL_SYSTEM_PROMPT
+    assert "Add ETF search" in SQL_SYSTEM_PROMPT
+    # The refusal bullet must defer to those rules rather than catching them.
+    assert "describing what a fund is, per the rules above" in SQL_SYSTEM_PROMPT
+
+
+def test_universe_definition_sql_passes_the_guard():
+    """The exact query shape the prompt prescribes must survive validation."""
+    validate(
+        "SELECT ticker, name, asset_class, sub_class, leverage, description "
+        "FROM public_marts.dim_etf WHERE ticker = 'SGOV'"
+    )
+
+
 def test_relationship_questions_are_in_scope_with_a_default_window():
     assert DEFAULT_RELATIONSHIP_LOOKBACK == "1 year"
     assert MIN_RELATIONSHIP_OBSERVATIONS == 200
