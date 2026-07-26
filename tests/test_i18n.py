@@ -25,7 +25,7 @@ def test_every_interface_key_has_both_languages():
 
 def test_translation_lookup_keeps_each_interface_language_separate():
     assert tr("home.subtitle", "en").startswith("Compare historical prices")
-    assert tr("home.subtitle", "ko").startswith("17개 ETF의 과거 가격")
+    assert tr("home.subtitle", "ko").startswith("기본 ETF와 현재 세션")
     assert tr("ask.truncated", "en", rows=200).startswith("Only 200 rows")
 
 

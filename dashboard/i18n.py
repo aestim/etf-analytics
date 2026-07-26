@@ -13,8 +13,8 @@ LANGUAGE_OPTIONS = {"English": "en", "한국어": "ko"}
 
 COPY: dict[str, dict[Language, str]] = {
     "home.subtitle": {
-        "en": "Compare historical prices, returns, and risk across 17 ETFs.",
-        "ko": "17개 ETF의 과거 가격과 수익률, 위험을 한눈에 비교합니다.",
+        "en": "Compare historical prices, returns, and risk across the default universe and ETFs you add for this session.",
+        "ko": "기본 ETF와 현재 세션에 추가한 ETF의 과거 가격, 수익률, 위험을 비교합니다.",
     },
     "home.intro_title": {
         "en": "👋 New to ETFs? Start here",
@@ -102,6 +102,133 @@ COPY: dict[str, dict[Language, str]] = {
     "home.empty_selection": {
         "en": "Select at least one ETF to display the charts.",
         "ko": "차트를 보려면 ETF를 하나 이상 골라주세요.",
+    },
+    "custom.title": {
+        "en": "🔎 Find and add an ETF for this session",
+        "ko": "🔎 현재 세션에 추가할 ETF 찾기",
+    },
+    "custom.help": {
+        "en": "Search by ETF name, ISIN or Yahoo Finance symbol. Yahoo results are best-effort, so choose the listing you use with your broker.",
+        "ko": "ETF 이름, ISIN 또는 Yahoo Finance 종목 코드로 검색하세요. Yahoo 결과는 완전하지 않을 수 있으므로 실제 이용하는 상장 시장을 직접 선택하세요.",
+    },
+    "custom.input_label": {
+        "en": "ETF name, ISIN or Yahoo Finance symbol",
+        "ko": "ETF 이름, ISIN 또는 Yahoo Finance 종목 코드",
+    },
+    "custom.input_placeholder": {
+        "en": "e.g. Vanguard FTSE All-World, IE00BK5BQT80 or VWCE.DE",
+        "ko": "예: Vanguard FTSE All-World, IE00BK5BQT80 또는 VWCE.DE",
+    },
+    "custom.search": {"en": "Search", "ko": "검색"},
+    "custom.searching": {
+        "en": "Searching Yahoo Finance...",
+        "ko": "Yahoo Finance에서 검색하는 중...",
+    },
+    "custom.results_for": {
+        "en": "Search results for `{query}`",
+        "ko": "`{query}` 검색 결과",
+    },
+    "custom.search_results": {
+        "en": "Choose a listing",
+        "ko": "상장 시장 선택",
+    },
+    "custom.add_selected": {
+        "en": "Add selected ETF",
+        "ko": "선택한 ETF 추가",
+    },
+    "custom.direct_fallback": {
+        "en": "Yahoo returned no search candidates. You can still try the exact symbol below.",
+        "ko": "Yahoo 검색 후보가 없습니다. 아래 종목 코드를 직접 조회해 볼 수 있습니다.",
+    },
+    "custom.try_exact_symbol": {
+        "en": "Try exact symbol: {symbol}",
+        "ko": "정확한 종목 코드 직접 시도: {symbol}",
+    },
+    "custom.invalid_query": {
+        "en": "Enter an ETF name, ISIN or Yahoo Finance symbol.",
+        "ko": "ETF 이름, ISIN 또는 Yahoo Finance 종목 코드를 입력하세요.",
+    },
+    "custom.no_results": {
+        "en": "No candidates were found. Try the full fund name, an ISIN, or an exchange-suffixed Yahoo symbol.",
+        "ko": "검색 후보가 없습니다. 전체 상품명, ISIN 또는 거래소 접미사가 붙은 Yahoo 종목 코드로 다시 검색하세요.",
+    },
+    "custom.search_unavailable": {
+        "en": "Yahoo search is temporarily unavailable. If you entered an exact symbol, you may still try it below.",
+        "ko": "Yahoo 검색을 일시적으로 사용할 수 없습니다. 정확한 종목 코드를 입력했다면 아래에서 직접 조회할 수 있습니다.",
+    },
+    "custom.verify_isin": {
+        "en": "Yahoo search may not return every listing or prove an exact ISIN/share-class match. Verify the listing with your broker or issuer.",
+        "ko": "Yahoo 검색은 모든 상장 시장을 반환하거나 정확한 ISIN·share class 일치를 보장하지 않습니다. 브로커나 발행사에서 확인하세요.",
+    },
+    "custom.verify_listing": {
+        "en": "Similar names can belong to different accumulating or distributing share classes. Verify the selected listing with your broker or issuer.",
+        "ko": "이름이 비슷해도 적립형·분배형 등 다른 share class일 수 있습니다. 선택한 상품을 브로커나 발행사에서 확인하세요.",
+    },
+    "custom.provider_type": {
+        "en": "Yahoo type",
+        "ko": "Yahoo 분류",
+    },
+    "custom.exchange_unknown": {
+        "en": "Exchange unknown",
+        "ko": "거래소 정보 없음",
+    },
+    "custom.type_unknown": {
+        "en": "Unclassified",
+        "ko": "분류 정보 없음",
+    },
+    "custom.loading": {
+        "en": "Loading history for {ticker}...",
+        "ko": "{ticker} 과거 데이터를 불러오는 중...",
+    },
+    "custom.added": {
+        "en": "{ticker} is now available on Overview and Strategy Lab.",
+        "ko": "{ticker}를 한눈에 보기와 투자 방법 비교에 추가했습니다.",
+    },
+    "custom.already_available": {
+        "en": "{ticker} is already included in the standard ETF universe.",
+        "ko": "{ticker}는 이미 기본 ETF 목록에 있습니다.",
+    },
+    "custom.duplicate": {
+        "en": "{ticker} is already in this session.",
+        "ko": "{ticker}는 이미 현재 세션에 있습니다.",
+    },
+    "custom.invalid_ticker": {
+        "en": "Enter a valid Yahoo Finance symbol using letters, numbers, dots or hyphens.",
+        "ko": "영문자, 숫자, 점 또는 하이픈으로 된 Yahoo Finance 종목 코드를 입력하세요.",
+    },
+    "custom.isin_error": {
+        "en": "This looks like an ISIN. Enter the Yahoo Finance listing symbol instead; European symbols normally include an exchange suffix.",
+        "ko": "ISIN으로 보입니다. Yahoo Finance의 상장 종목 코드를 입력하세요. 유럽 종목에는 보통 거래소 접미사가 붙습니다.",
+    },
+    "custom.unavailable": {
+        "en": "No usable daily history was found for {ticker}. Check the symbol and exchange suffix.",
+        "ko": "{ticker}의 일별 데이터를 찾지 못했습니다. 종목 코드와 거래소 접미사를 확인하세요.",
+    },
+    "custom.insufficient": {
+        "en": "{ticker} has fewer than 30 usable trading days, so it was not added.",
+        "ko": "{ticker}는 사용 가능한 거래일이 30일 미만이어서 추가하지 않았습니다.",
+    },
+    "custom.limit": {
+        "en": "You can add up to 5 ETFs per session. Remove one before adding another.",
+        "ko": "한 세션에 ETF를 최대 5개까지 추가할 수 있습니다. 기존 항목을 삭제한 뒤 추가하세요.",
+    },
+    "custom.current": {
+        "en": "ETFs added in this session",
+        "ko": "현재 세션에 추가된 ETF",
+    },
+    "custom.remove": {"en": "Remove", "ko": "삭제"},
+    "custom.clear": {"en": "Remove all session ETFs", "ko": "세션 ETF 모두 삭제"},
+    "custom.session_notice": {
+        "en": "Session only: these symbols disappear when the session ends and are not available in Ask.",
+        "ko": "세션 전용: 세션이 끝나면 사라지며 ETF 질문하기에는 포함되지 않습니다.",
+    },
+    "custom.currency_notice": {
+        "en": "Data remains in each listing's trading currency. The app does not convert currencies or verify ETF classification, tax status, or local investor eligibility.",
+        "ko": "각 상장 종목의 거래 통화를 그대로 사용합니다. 환전, ETF 상품 분류, 세금 또는 현지 투자자격은 확인하지 않습니다.",
+    },
+    "custom.strategy_notice": {
+        "en": "Session ETFs available here: {tickers}. Their returns remain in each listing currency; no FX conversion is applied.",
+        "ko": "현재 세션 ETF: {tickers}. 각 상장 통화 기준 수익률이며 환율 변환은 적용하지 않습니다.",
     },
     "home.adjusted_price": {
         "en": "Dividend-adjusted price",

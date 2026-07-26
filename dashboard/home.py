@@ -10,6 +10,30 @@ import plotly.express as px
 import streamlit as st
 
 from chart_colors import ticker_color_map
+from custom_etf import (
+    CustomEtfLimitError,
+    DuplicateTickerError,
+    InsufficientHistoryError,
+    InstrumentCandidate,
+    InstrumentSearchError,
+    InvalidSearchQueryError,
+    InvalidTickerError,
+    IsinNotSupportedError,
+    PriceDataUnavailableError,
+    add_session_prices,
+    candidate_for_symbol,
+    clear_session_prices,
+    direct_symbol_candidate,
+    fetch_price_history,
+    looks_like_isin,
+    merge_custom_data,
+    normalize_search_query,
+    normalize_ticker,
+    remove_session_ticker,
+    search_instruments,
+    session_prices,
+    session_tickers,
+)
 from db import (
     DATAFRAME_ROW_HEIGHT,
     PLOTLY_LAYOUT,
@@ -29,6 +53,209 @@ from i18n import (
     current_language,
     tr,
 )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_custom_history(ticker: str) -> pd.DataFrame:
+    """Cache vendor calls globally while keeping selections session-specific."""
+
+    return fetch_price_history(ticker)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_instrument_search(query: str) -> tuple[InstrumentCandidate, ...]:
+    """Cache public Yahoo results while keeping user choices session-specific."""
+
+    return search_instruments(query)
+
+
+SEARCH_QUERY_KEY = "custom_etf_search_query"
+SEARCH_RESULTS_KEY = "custom_etf_search_results"
+SEARCH_DIRECT_FALLBACK_KEY = "custom_etf_direct_fallback"
+SEARCH_GENERATION_KEY = "custom_etf_search_generation"
+
+
+def _store_search_state(
+    query: str,
+    candidates: tuple[InstrumentCandidate, ...],
+    *,
+    direct_fallback: bool,
+) -> None:
+    """Replace search state so a prior radio selection cannot leak forward."""
+
+    st.session_state[SEARCH_QUERY_KEY] = query
+    st.session_state[SEARCH_RESULTS_KEY] = candidates
+    st.session_state[SEARCH_DIRECT_FALLBACK_KEY] = direct_fallback
+    generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
+    st.session_state[SEARCH_GENERATION_KEY] = generation + 1
+
+
+def _candidate_label(candidate: InstrumentCandidate, lang: Language) -> str:
+    exchange = candidate.exchange or tr("custom.exchange_unknown", lang)
+    provider_type = candidate.provider_type or tr("custom.type_unknown", lang)
+    return (
+        f"{candidate.display_name} — {candidate.symbol} · {exchange} · "
+        f"{tr('custom.provider_type', lang)}: {provider_type}"
+    )
+
+
+def _add_custom_symbol(
+    ticker: str,
+    returns_df: pd.DataFrame,
+    lang: Language,
+) -> None:
+    """Fetch only the selected symbol, then add it to this session."""
+
+    try:
+        normalized_ticker = normalize_ticker(ticker)
+        built_in = set(returns_df["ticker"].dropna().astype(str))
+        if normalized_ticker in built_in:
+            st.info(
+                tr(
+                    "custom.already_available",
+                    lang,
+                    ticker=normalized_ticker,
+                )
+            )
+            return
+        with st.spinner(
+            tr("custom.loading", lang, ticker=normalized_ticker)
+        ):
+            prices = cached_custom_history(normalized_ticker)
+        add_session_prices(st.session_state, prices)
+        st.success(tr("custom.added", lang, ticker=normalized_ticker))
+    except IsinNotSupportedError:
+        st.error(tr("custom.isin_error", lang))
+    except InvalidTickerError:
+        st.error(tr("custom.invalid_ticker", lang))
+    except DuplicateTickerError as exc:
+        st.info(tr("custom.duplicate", lang, ticker=str(exc)))
+    except CustomEtfLimitError:
+        st.error(tr("custom.limit", lang))
+    except InsufficientHistoryError as exc:
+        st.error(tr("custom.insufficient", lang, ticker=str(exc)))
+    except PriceDataUnavailableError as exc:
+        st.error(tr("custom.unavailable", lang, ticker=str(exc)))
+
+
+def custom_etf_controls(
+    returns_df: pd.DataFrame,
+    lang: Language,
+) -> pd.DataFrame:
+    """Render add/remove controls and return this session's custom prices."""
+
+    with st.expander(tr("custom.title", lang)):
+        st.caption(tr("custom.help", lang))
+        with st.form("custom_etf_search_form"):
+            raw_query = st.text_input(
+                tr("custom.input_label", lang),
+                placeholder=tr("custom.input_placeholder", lang),
+            )
+            submitted = st.form_submit_button(tr("custom.search", lang))
+
+        if submitted:
+            try:
+                query = normalize_search_query(raw_query)
+                with st.spinner(tr("custom.searching", lang)):
+                    candidates = cached_instrument_search(query)
+                direct_fallback = False
+                if not candidates:
+                    direct = direct_symbol_candidate(query)
+                    if direct is not None:
+                        candidates = (direct,)
+                        direct_fallback = True
+                _store_search_state(
+                    query,
+                    candidates,
+                    direct_fallback=direct_fallback,
+                )
+            except InvalidSearchQueryError:
+                _store_search_state("", (), direct_fallback=False)
+                st.error(tr("custom.invalid_query", lang))
+            except InstrumentSearchError as exc:
+                query = str(exc)
+                direct = direct_symbol_candidate(query)
+                candidates = (direct,) if direct is not None else ()
+                _store_search_state(
+                    query,
+                    candidates,
+                    direct_fallback=direct is not None,
+                )
+                st.error(tr("custom.search_unavailable", lang))
+                with st.expander(tr("home.admin_details", lang)):
+                    detail = exc.__cause__ if exc.__cause__ is not None else exc
+                    st.code(str(detail))
+
+        search_query = st.session_state.get(SEARCH_QUERY_KEY, "")
+        candidates = st.session_state.get(SEARCH_RESULTS_KEY, ())
+        direct_fallback = st.session_state.get(
+            SEARCH_DIRECT_FALLBACK_KEY, False
+        )
+        if isinstance(candidates, tuple) and candidates:
+            if direct_fallback:
+                st.info(tr("custom.direct_fallback", lang))
+                st.caption(
+                    tr(
+                        "custom.try_exact_symbol",
+                        lang,
+                        symbol=candidates[0].symbol,
+                    )
+                )
+            else:
+                st.caption(
+                    tr(
+                        "custom.results_for",
+                        lang,
+                        query=search_query,
+                    )
+                )
+            if looks_like_isin(search_query):
+                st.warning(tr("custom.verify_isin", lang))
+            else:
+                st.caption(tr("custom.verify_listing", lang))
+
+            candidates_by_symbol = {
+                candidate.symbol: candidate for candidate in candidates
+            }
+            selected_symbol = st.radio(
+                tr("custom.search_results", lang),
+                options=list(candidates_by_symbol),
+                format_func=lambda symbol: _candidate_label(
+                    candidates_by_symbol[symbol], lang
+                ),
+                key=(
+                    "custom_etf_choice_"
+                    f"{st.session_state.get(SEARCH_GENERATION_KEY, 0)}"
+                ),
+            )
+            if st.button(
+                tr("custom.add_selected", lang),
+                key=f"add_custom_etf_{search_query}",
+            ):
+                selected = candidate_for_symbol(candidates, selected_symbol)
+                _add_custom_symbol(selected.symbol, returns_df, lang)
+        elif search_query:
+            st.info(tr("custom.no_results", lang))
+
+        tickers = session_tickers(st.session_state)
+        if tickers:
+            st.caption(tr("custom.current", lang))
+            for ticker in tickers:
+                label_col, remove_col = st.columns([4, 1])
+                label_col.code(ticker)
+                if remove_col.button(
+                    tr("custom.remove", lang),
+                    key=f"remove_custom_{ticker}",
+                ):
+                    remove_session_ticker(st.session_state, ticker)
+                    st.rerun()
+            if st.button(tr("custom.clear", lang), key="clear_custom_etfs"):
+                clear_session_prices(st.session_state)
+                st.rerun()
+        st.caption(tr("custom.session_notice", lang))
+        st.caption(tr("custom.currency_notice", lang))
+
+    return session_prices(st.session_state)
 
 
 def line_chart(
@@ -101,6 +328,11 @@ except Exception as exc:
     st.stop()
 
 demo_mode_banner(lang)
+
+custom_prices = custom_etf_controls(returns_df, lang)
+returns_df, merged_risk = merge_custom_data(returns_df, risk_df, custom_prices)
+if merged_risk is not None:
+    risk_df = merged_risk
 
 with st.expander(tr("home.ticker_guide", lang)):
     try:

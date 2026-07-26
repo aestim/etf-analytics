@@ -59,6 +59,7 @@ execution.
 - **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
 - **Dashboard** — Streamlit multipage: English-first interface with a session-wide Korean switch, readable 17px base typography, stable 24-color palette, interactive ticker guide, mobile-safe charts, and translated metric tooltips
+- **Session ETF lookup** — visitors can search by ETF name, ISIN, or Yahoo Finance symbol, choose from up to eight exchange listings, and add up to five symbols to Overview and Strategy Lab without mutating the shared warehouse; an exact-symbol fallback remains available when search returns no candidates
 - **Strategy Lab** — a beginner-friendly custom ETF portfolio simulator with independently selectable entry timing and annual rebalancing, an optional second custom strategy, an always-visible comparison with five examples, and a separate detailed example view; adjusted prices include ETF operating expenses and distributions, while pure pytest-covered functions keep calculations separate from the UI
 - **Ask** — Gemini routes English/Korean questions to a plain concept explanation, a safe historical-data query, or a refusal; answer tables and deterministic chart titles/axes follow the question language, and conclusion-first correlation summaries require no second LLM call
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
@@ -203,6 +204,9 @@ Postgres plan that fits the workload (free-tier limits and pricing may change):
 ## Data & limitations
 
 - Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is the primary price for all return math
+- Visitor-added ETFs are session-only (maximum five) and are not written to Postgres/dbt or exposed to Ask. Search accepts a name, ISIN, or Yahoo Finance symbol, while the direct fallback accepts an exact Yahoo listing symbol (European listings commonly include suffixes such as `.DE`, `.L`, `.AS`, or `.VI`).
+- Yahoo search is best-effort: it may omit listings, mix share classes, or misclassify an ETF. The app ranks Yahoo's ETF-labelled candidates first but does not discard other fund types or claim an exact ISIN/share-class match. Users must choose the exchange listing themselves and verify it with their broker or issuer.
+- Custom-symbol validation requires usable daily price history. Prices and returns remain in each listing's trading currency; the app does not perform FX conversion or verify tax treatment or local investor eligibility.
 - Strategy Lab uses adjusted prices, so published ETF operating expenses and distributions are reflected in historical returns; it does not model trading fees, taxes, slippage, currency conversion, or interest on idle cash, and example strategy signals are lagged one day (no look-ahead)
 - Not investment advice; for portfolio demonstration and education only
 

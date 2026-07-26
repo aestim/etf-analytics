@@ -18,6 +18,7 @@ for _p in (_ROOT / "dashboard", _ROOT / "analytics"):
 
 import simulator as sim  # noqa: E402
 import strategies as strat  # noqa: E402
+from custom_etf import merge_custom_data, session_prices, session_tickers  # noqa: E402
 from db import (  # noqa: E402
     DATAFRAME_ROW_HEIGHT,
     PLOTLY_LAYOUT,
@@ -807,6 +808,17 @@ except Exception as exc:
     st.stop()
 
 demo_mode_banner(lang)
+custom_prices = session_prices(st.session_state)
+returns_df, _ = merge_custom_data(returns_df, None, custom_prices)
+custom_symbols = session_tickers(st.session_state)
+if custom_symbols:
+    st.caption(
+        tr(
+            "custom.strategy_notice",
+            lang,
+            tickers=", ".join(custom_symbols),
+        )
+    )
 all_prices = returns_df.pivot(
     index="price_date", columns="ticker", values="adj_close"
 ).sort_index()
