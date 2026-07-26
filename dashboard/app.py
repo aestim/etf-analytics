@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from custom_etf import RESULT_ROW_KEY_PREFIX
 from i18n import ui_controls
 
 
@@ -49,11 +50,85 @@ st.markdown(
     [data-testid="stForm"] [data-testid="InputInstructions"] {{
         display: none;
     }}
-    /* Search results are plain full-width buttons: one element per listing,
-       so nothing can wrap onto its own line and the click target is the row. */
-    [data-testid="stButton"] button p {{
+    /* Search results are plain full-width buttons — one element per listing,
+       so nothing can wrap onto its own line and the whole row is the click
+       target. These rules only restyle those keyed buttons into flat list
+       rows: two lines from the label's hard break, everything dimmed except
+       the bold symbol, a hairline between rows, hover highlight. If Streamlit
+       stops emitting st-key- classes they degrade to ordinary buttons and
+       keep working. */
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button {{
+        justify-content: flex-start;
+        text-align: left;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        min-height: 0;
+    }}
+    /* Between the button and its markdown sit two centring wrappers (a div
+       and a span) that shrink-wrap the text — they are what centred the
+       label. Stretch both so the text starts at the row's left edge.
+       (Verified against the rendered DOM, not assumed.) */
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button > div,
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button span,
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button
+      [data-testid="stMarkdownContainer"] {{
+        justify-content: flex-start;
+        width: 100%;
+    }}
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button p {{
         text-align: left;
         width: 100%;
+        line-height: 1.5;
+        font-size: 0.85rem;
+        color: rgba(250, 250, 250, 0.6);
+    }}
+    /* A long fund name must truncate, not wrap and push the identifiers to a
+       third line. display:block + overflow:hidden makes the name its own
+       block formatting context, so it narrows beside the floated badge and
+       volume and ellipsises exactly at that boundary. The <br> then becomes
+       redundant (a block already ends the line), so it is hidden to avoid a
+       blank line. */
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button strong {{
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #fafafa;
+    }}
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button p br {{
+        display: none;
+    }}
+    /* Monogram badge — the label's leading markdown image, floated so both
+       text lines sit beside it like a brokerage row. */
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button img {{
+        float: left;
+        width: 2.4rem;
+        height: 2.4rem;
+        max-height: none;
+        border-radius: 0.65rem;
+        margin-right: 0.75rem;
+    }}
+    /* Captioned volume — the label's code span, floated to the right edge
+       and stripped of Streamlit's inline-code chrome. */
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button code {{
+        float: right;
+        background: transparent;
+        border: none;
+        padding: 0.1rem 0 0 0.5rem;
+        font-family: inherit;
+        font-size: 0.78rem;
+        color: rgba(250, 250, 250, 0.45);
+    }}
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button:hover {{
+        background: rgba(250, 250, 250, 0.07);
+    }}
+    [class*="st-key-{RESULT_ROW_KEY_PREFIX}"]
+      + [class*="st-key-{RESULT_ROW_KEY_PREFIX}"] {{
+        border-top: 1px solid rgba(250, 250, 250, 0.07);
     }}
     </style>
     """,

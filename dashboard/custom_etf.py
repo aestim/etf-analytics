@@ -8,7 +8,10 @@ schema.
 
 from __future__ import annotations
 
+import base64
+import html
 import re
+import zlib
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, replace
 from typing import Any
@@ -189,35 +192,106 @@ def search_query_variants(value: str) -> tuple[str, ...]:
     return tuple(variants)
 
 
-CANDIDATE_FRAME_COLUMNS = ("symbol", "name", "exchange", "average_daily_volume")
+# One key prefix shared by every result-row button. Streamlit exposes a widget
+# key as an `st-key-{key}` CSS class (documented on st.button), which is how
+# app.py restyles ONLY these buttons into flat list rows. Styling the button
+# itself is safe: it stays the clickable element, so if the stylesheet ever
+# stops matching, the rows fall back to ordinary buttons and still work.
+RESULT_ROW_KEY_PREFIX = "add_custom_etf"
 
 
-def candidates_frame(
-    candidates: tuple[InstrumentCandidate, ...],
-) -> pd.DataFrame:
-    """Lay search results out as one selectable row per listing.
+def format_compact_volume(value: float | None) -> str:
+    """Format share counts so they can be read at a glance (38.6M, 374.3K)."""
 
-    A table is what Streamlit can make genuinely clickable: ``st.dataframe``
-    returns the selected row, so the whole row is the control without any
-    styling of Streamlit's own DOM. It also gives the measure a column header,
-    so the figure is named instead of sitting bare next to a fund name.
+    if value is None or not np.isfinite(value) or value < 0:
+        return "—"
+    for threshold, suffix in (
+        (1_000_000_000, "B"),
+        (1_000_000, "M"),
+        (1_000, "K"),
+    ):
+        if value >= threshold:
+            return f"{value / threshold:,.1f}{suffix}"
+    return f"{value:,.0f}"
 
-    Column names here are internal; the display labels live in the page's
-    ``column_config`` so they can follow the interface language.
+
+def _badge_fill(exchange: str) -> str:
+    """Map an exchange name to a stable, muted tile colour.
+
+    The same exchange always gets the same hue (crc32, not Python's salted
+    hash), so listings group visually the way brokerage logos do. Saturation
+    and lightness are fixed low so every hue stays a quiet dark-theme tile.
+    Listings with no exchange keep a neutral tile.
     """
 
-    return pd.DataFrame(
-        {
-            "symbol": [candidate.symbol for candidate in candidates],
-            "name": [candidate.display_name for candidate in candidates],
-            "exchange": [candidate.exchange for candidate in candidates],
-            "average_daily_volume": pd.array(
-                [candidate.average_daily_volume for candidate in candidates],
-                dtype="Float64",
-            ),
-        },
-        columns=list(CANDIDATE_FRAME_COLUMNS),
+    if not exchange:
+        return "rgba(250,250,250,0.12)"
+    hue = zlib.crc32(exchange.strip().upper().encode("utf-8")) % 360
+    return f"hsl({hue},42%,30%)"
+
+
+def monogram_badge_uri(symbol: str, exchange: str = "") -> str:
+    """Return a data-URI SVG monogram used as the row's leading badge.
+
+    Brokerage apps show provider logos here; this app has no licensed logo
+    assets, so the badge is the first letters of the base symbol on a tile
+    coloured by exchange. Rendered via Markdown's image syntax inside the
+    button label and sized by the stylesheet in app.py.
+    """
+
+    letters = html.escape(symbol.partition(".")[0][:2].upper())
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'>"
+        f"<rect width='44' height='44' rx='10' fill='{_badge_fill(exchange)}'/>"
+        "<text x='22' y='29' font-family='sans-serif' font-size='15'"
+        " font-weight='600' fill='#fafafa' text-anchor='middle'>"
+        f"{letters}</text></svg>"
     )
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+# Inline Markdown that Streamlit renders inside a widget label. A fund name
+# such as "S&P 500 *Acc*" would otherwise turn into formatting.
+_LABEL_MARKDOWN = re.compile(r"([\\`*_\[\]~])")
+
+
+def escape_label_markdown(value: str) -> str:
+    """Escape provider text that is passed to Streamlit as a widget label."""
+
+    return _LABEL_MARKDOWN.sub(r"\\\1", value)
+
+
+def candidate_button_label(
+    candidate: InstrumentCandidate,
+    *,
+    volume_caption: str | None = None,
+) -> str:
+    """Label one search result as a brokerage-style clickable row.
+
+    Layout, all in label Markdown that app.py's stylesheet arranges: a
+    monogram badge image floated left, the captioned volume as a code span
+    floated to the right edge, the fund name in bold, and the dimmed
+    ``symbol · exchange`` identifiers on a second line (a CommonMark hard
+    break — Streamlit's label disallow-list does not include ``br``). Floated
+    elements must come first in the source so they anchor to the top corners.
+    """
+
+    name = candidate.display_name or candidate.symbol
+    identifiers = [candidate.symbol]
+    if candidate.exchange:
+        identifiers.append(candidate.exchange)
+    first_line = f"![]({monogram_badge_uri(candidate.symbol, candidate.exchange)})"
+    if volume_caption:
+        first_line += f"`{volume_caption}`"
+    first_line += f"**{escape_label_markdown(name)}**"
+    lines = [first_line]
+    identifier_line = " · ".join(
+        escape_label_markdown(part) for part in identifiers
+    )
+    if identifier_line != name:
+        lines.append(identifier_line)
+    return "  \n".join(lines)
 
 
 def looks_like_isin(value: str) -> bool:

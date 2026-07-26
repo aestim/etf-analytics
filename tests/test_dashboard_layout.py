@@ -18,8 +18,9 @@ APP_SOURCE = (DASHBOARD / "app.py").read_text(encoding="utf-8")
 BUTTON_COMMANDS = {"button", "form_submit_button", "download_button", "link_button"}
 # Search results are rendered as one full-width button per listing, so the whole
 # row is the click target. That button is a list row, not a control, and is the
-# single reason a stretched button is allowed anywhere in the dashboard.
-FULL_WIDTH_ROW_KEY = "add_custom_etf"
+# single reason a stretched button is allowed anywhere in the dashboard. Its key
+# is built from this constant, which is what the unparsed keyword contains.
+FULL_WIDTH_ROW_KEY = "RESULT_ROW_KEY_PREFIX"
 
 
 def _button_key_source(node: ast.Call) -> str:

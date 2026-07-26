@@ -26,8 +26,9 @@ from custom_etf import (
     build_indexed_price_comparison,
     build_custom_marts,
     candidate_for_symbol,
-    CANDIDATE_FRAME_COLUMNS,
-    candidates_frame,
+    candidate_button_label,
+    escape_label_markdown,
+    monogram_badge_uri,
     direct_symbol_candidate,
     fetch_average_daily_volumes,
     fetch_price_history,
@@ -487,76 +488,100 @@ def test_search_results_are_not_paginated():
     assert "custom_etf_show_all" not in source
 
 
-def test_results_are_a_single_selectable_table():
-    """Every attempt at splitting a row into text plus its own button failed:
-    st.columns and a horizontal container wrapped the button onto its own line
-    on a phone, and a CSS overlay stopped registering clicks. Row selection is
-    the one documented way to make a Streamlit list clickable."""
-    tables = [
+def test_each_result_row_is_one_keyed_full_width_button():
+    """One element per listing cannot wrap away from itself on a phone, and the
+    shared key prefix is what lets the stylesheet restyle only these buttons."""
+    row_buttons = [
         node
         for node in ast.walk(_home_tree())
-        if _dotted_call_name(node) == "st.dataframe"
-        and any(keyword.arg == "on_select" for keyword in node.keywords)
+        if _dotted_call_name(node) == "st.button"
+        and any(
+            keyword.arg == "key"
+            and "RESULT_ROW_KEY_PREFIX" in ast.unparse(keyword.value)
+            for keyword in node.keywords
+        )
     ]
 
-    assert len(tables) == 1
-    options = {
-        keyword.arg: getattr(keyword.value, "value", None)
-        for keyword in tables[0].keywords
-    }
-    assert options["on_select"] == "rerun"
-    assert options["selection_mode"] == "single-row"
-    # A per-search key, so a new result set does not inherit the old selection.
-    assert "generation" in ast.unparse(
-        next(kw.value for kw in tables[0].keywords if kw.arg == "key")
+    assert len(row_buttons) == 1
+    keywords = {keyword.arg for keyword in row_buttons[0].keywords}
+    assert "width" in keywords, "a list row spans the list"
+    # The sort measure is named in the tooltip rather than left bare in a row.
+    assert "help" in keywords
+
+
+def test_the_row_stylesheet_targets_the_key_the_buttons_use():
+    """The CSS hook and the button keys share one constant so they cannot
+    drift apart silently. The styling is cosmetic: without it the rows are
+    ordinary buttons, so a missed selector cannot break clicking."""
+    app_source = (
+        Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+    ).read_text(encoding="utf-8")
+
+    assert "RESULT_ROW_KEY_PREFIX" in app_source
+    assert '[class*="st-key-{RESULT_ROW_KEY_PREFIX}"] button' in app_source
+    # Restyle only: the stylesheet must not reposition the button or hide its
+    # label, which is what broke clicking in the overlay attempt.
+    assert "position: absolute" not in app_source
+    assert "color: transparent" not in app_source
+
+
+def test_candidate_label_leads_with_the_name_then_the_identifiers():
+    candidate = InstrumentCandidate(
+        symbol="VUSA.L",
+        display_name="Vanguard S&P 500 UCITS ETF",
+        exchange="London",
+        provider_type="ETF",
+        currency="GBP",
+        average_daily_volume=40_182,
     )
 
+    label = candidate_button_label(candidate, volume_caption="Vol 40.2K")
 
-def test_a_handled_selection_is_recorded_so_it_is_not_added_twice():
-    """A dataframe selection survives reruns; without a marker, reopening the
-    dialog would re-add the same listing on every run."""
-    source = (Path(__file__).resolve().parents[1] / "dashboard" / "home.py").read_text(
-        encoding="utf-8"
+    # Brokerage row in pure label Markdown: badge image and captioned-volume
+    # code span first (floated by the stylesheet), bold name, then dimmed
+    # identifiers after a CommonMark hard break (a real <br> — Streamlit's
+    # label disallow list does not include it).
+    assert label.startswith("![](data:image/svg+xml;base64,")
+    assert "`Vol 40.2K`**Vanguard S&P 500 UCITS ETF**" in label
+    assert label.endswith("  \nVUSA.L · London")
+    assert "GBP" not in label
+
+
+def test_candidate_label_escapes_markdown_in_provider_text():
+    """A widget label renders inline Markdown, so a fund name can format itself."""
+    candidate = InstrumentCandidate(
+        symbol="AAA", display_name="S&P 500 *Acc* _2x_", exchange="", provider_type=""
     )
 
-    assert "SELECTION_HANDLED_KEY" in source
+    label = candidate_button_label(candidate)
+
+    assert r"\*Acc\*" in label
+    assert r"\_2x\_" in label
+    assert label.endswith("  \nAAA")
+    # No volume caption -> no code span for the stylesheet to float.
+    assert "`" not in label
 
 
-def test_candidates_frame_carries_one_row_per_listing():
-    candidates = (
-        InstrumentCandidate("QQQ", "Invesco QQQ Trust", "NASDAQ", "ETF", 38_600_000),
-        InstrumentCandidate("XNAS.L", "Xtrackers NASDAQ 100", "London", "ETF", None),
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("a*b", r"a\*b"), ("a_b", r"a\_b"), ("[x]", r"\[x\]"), ("plain", "plain")],
+)
+def test_escape_label_markdown(raw, expected):
+    assert escape_label_markdown(raw) == expected
+
+
+def test_candidate_label_omits_details_the_provider_did_not_give():
+    bare = InstrumentCandidate(
+        symbol="AAA", display_name="AAA", exchange="", provider_type=""
+    )
+    with_exchange = InstrumentCandidate(
+        symbol="AAA", display_name="AAA", exchange="London", provider_type=""
     )
 
-    frame = candidates_frame(candidates)
-
-    assert list(frame.columns) == list(CANDIDATE_FRAME_COLUMNS)
-    assert frame["symbol"].tolist() == ["QQQ", "XNAS.L"]
-    assert frame["name"].tolist() == ["Invesco QQQ Trust", "Xtrackers NASDAQ 100"]
-    assert frame["exchange"].tolist() == ["NASDAQ", "London"]
-    # Row order is the ranking, so a selected index maps straight back.
-    assert frame.index.tolist() == [0, 1]
-
-
-def test_candidates_frame_keeps_volume_numeric_and_missing_values_null():
-    """A NumberColumn formats and right-aligns it; a placeholder string cannot."""
-    candidates = (
-        InstrumentCandidate("QQQ", "Invesco QQQ Trust", "NASDAQ", "ETF", 38_600_000),
-        InstrumentCandidate("XNAS.L", "Xtrackers NASDAQ 100", "London", "ETF", None),
-    )
-
-    volume = candidates_frame(candidates)["average_daily_volume"]
-
-    assert pd.api.types.is_numeric_dtype(volume)
-    assert volume.iloc[0] == 38_600_000
-    assert pd.isna(volume.iloc[1])
-
-
-def test_candidates_frame_is_empty_but_shaped_without_results():
-    frame = candidates_frame(())
-
-    assert frame.empty
-    assert list(frame.columns) == list(CANDIDATE_FRAME_COLUMNS)
+    # A name identical to the symbol is not repeated on a second line, and
+    # there is no dangling separator where the exchange would have been.
+    assert candidate_button_label(bare).endswith(")**AAA**")
+    assert candidate_button_label(with_exchange).endswith("**AAA**  \nAAA · London")
 
 
 
@@ -989,3 +1014,21 @@ def test_custom_data_merges_without_mutating_base_frames():
     assert set(merged_risk["ticker"]) == {"SPY", "VWCE.DE"}
     pd.testing.assert_frame_equal(base_returns, original_returns)
     pd.testing.assert_frame_equal(base_risk, original_risk)
+
+
+def test_badge_colour_is_stable_per_exchange():
+    """Same exchange, same tile; different exchanges differ; none stays neutral."""
+    import base64 as b64
+
+    def fill(symbol, exchange):
+        uri = monogram_badge_uri(symbol, exchange)
+        svg = b64.b64decode(uri.split(",", 1)[1]).decode("utf-8")
+        return svg.split("fill='")[1].split("'")[0]
+
+    assert fill("QQQ", "NASDAQ") == fill("QQA", "NASDAQ")
+    assert fill("XNAS.L", "London") != fill("QQQ", "NASDAQ")
+    assert fill("AAA", "") == "rgba(250,250,250,0.12)"
+    # Letters come from the base symbol, not the exchange.
+    assert ">XN</text>" in b64.b64decode(
+        monogram_badge_uri("XNAS.L", "London").split(",", 1)[1]
+    ).decode("utf-8")

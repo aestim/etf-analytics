@@ -165,18 +165,19 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "`{query}`의 Yahoo 상장 후보: {count}개",
     },
     "custom.add": {"en": "Add", "ko": "추가"},
-    "custom.select_hint": {
-        "en": "Select a row to add that listing.",
-        "ko": "행을 선택하면 해당 상장이 추가됩니다.",
+    # Right edge of each result row: captioned so the figure is not left bare.
+    "custom.volume_caption": {
+        "en": "Vol {volume}",
+        "ko": "거래량 {volume}",
     },
-    "custom.col_symbol": {"en": "Symbol", "ko": "종목 코드"},
-    "custom.col_fund": {"en": "Fund", "ko": "펀드"},
-    "custom.col_exchange": {"en": "Exchange", "ko": "거래소"},
-    # Kept short on purpose: a column is at least as wide as its header.
-    "custom.col_volume": {"en": "Volume", "ko": "거래량"},
-    "custom.col_volume_help": {
-        "en": "Average daily volume over the past month, in shares.",
-        "ko": "최근 1개월 일평균 거래량(주 단위).",
+    # Row tooltip: names the sort measure in full.
+    "custom.average_volume": {
+        "en": "1-month average daily volume: {volume} shares",
+        "ko": "최근 1개월 일평균 거래량: {volume}주",
+    },
+    "custom.volume_unavailable": {
+        "en": "Recent volume unavailable",
+        "ko": "최근 거래량 정보 없음",
     },
     "custom.sort_notice_relevance": {
         "en": "Ordered by ticker, name and share-class match; volume breaks close ties.",

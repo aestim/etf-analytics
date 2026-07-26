@@ -36,8 +36,10 @@ from custom_etf import (
     add_session_prices,
     build_custom_marts,
     build_indexed_price_comparison,
-    candidates_frame,
+    RESULT_ROW_KEY_PREFIX,
+    candidate_button_label,
     clear_session_prices,
+    format_compact_volume,
     direct_symbol_candidate,
     fetch_price_history,
     looks_like_isin,
@@ -109,7 +111,6 @@ SEARCH_GENERATION_KEY = "custom_etf_search_generation"
 SEARCH_SORT_KEY = "custom_etf_search_sort_v2"
 SEARCH_FLASH_KEY = "custom_etf_flash"
 HOME_SELECTED_TICKERS_KEY = "home_selected_tickers"
-SELECTION_HANDLED_KEY = "custom_etf_handled_selection"
 
 
 def _store_search_state(
@@ -338,52 +339,35 @@ def custom_etf_dialog(
                     )
                 )
             generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
-            st.caption(tr("custom.select_hint", lang))
 
-            # A selectable table is the one list Streamlit makes clickable
-            # through a documented API. Splitting a row into text plus its own
-            # button — with st.columns, a horizontal container, or a CSS overlay
-            # — wrapped onto a second line on a phone or stopped registering
-            # clicks. Column headers also name the measure, so the figure is not
-            # left bare beside a fund name.
-            selection = st.dataframe(
-                candidates_frame(candidates),
-                key=f"custom_etf_results_{generation}",
-                on_select="rerun",
-                selection_mode="single-row",
-                hide_index=True,
-                width="stretch",
-                row_height=DATAFRAME_ROW_HEIGHT,
-                # No width overrides: a fixed width is exactly that, so pinning
-                # every column overflowed the dialog and cut off the last one.
-                # Streamlit sizes columns to their contents and shares out any
-                # slack. Headers stay short for the same reason — a long header
-                # widens its column even when the values are narrow.
-                column_config={
-                    "symbol": st.column_config.TextColumn(
-                        tr("custom.col_symbol", lang)
-                    ),
-                    "name": st.column_config.TextColumn(tr("custom.col_fund", lang)),
-                    "exchange": st.column_config.TextColumn(
-                        tr("custom.col_exchange", lang)
-                    ),
-                    "average_daily_volume": st.column_config.NumberColumn(
-                        tr("custom.col_volume", lang),
-                        help=tr("custom.col_volume_help", lang),
-                        format="compact",
-                    ),
-                },
-            )
-            picked = list(selection.selection.rows)
-            # The selection survives a rerun, so without this marker reopening
-            # the dialog would re-add the same listing on every run.
-            if picked and st.session_state.get(SELECTION_HANDLED_KEY) != (
-                generation,
-                picked[0],
-            ):
-                st.session_state[SELECTION_HANDLED_KEY] = (generation, picked[0])
-                if _add_custom_symbol(candidates[picked[0]], base_returns_df, lang):
-                    st.rerun()
+            # One plain button per listing: the row is the click target and a
+            # single element cannot wrap away from itself on a phone. app.py
+            # restyles these keyed buttons into flat list rows; without that
+            # stylesheet they degrade to ordinary buttons and still work.
+            with st.container(gap=None):
+                for candidate in candidates:
+                    volume = candidate.average_daily_volume
+                    caption = (
+                        tr(
+                            "custom.volume_caption",
+                            lang,
+                            volume=format_compact_volume(volume),
+                        )
+                        if volume is not None
+                        else None
+                    )
+                    tooltip = (
+                        tr("custom.average_volume", lang, volume=f"{volume:,.0f}")
+                        if volume is not None
+                        else tr("custom.volume_unavailable", lang)
+                    )
+                    if st.button(
+                        candidate_button_label(candidate, volume_caption=caption),
+                        key=f"{RESULT_ROW_KEY_PREFIX}_{generation}_{candidate.symbol}",
+                        help=tooltip,
+                        width="stretch",
+                    ) and _add_custom_symbol(candidate, base_returns_df, lang):
+                        st.rerun()
         elif search_query:
             st.info(tr("custom.no_results", lang))
 
