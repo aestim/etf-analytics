@@ -29,6 +29,7 @@ from custom_etf import (
     normalize_ticker,
     remove_session_ticker,
     search_instruments,
+    search_query_variants,
     session_tickers,
 )
 
@@ -82,6 +83,16 @@ def test_search_query_accepts_names_isins_and_symbols_before_ticker_validation()
         normalize_search_query("   ")
 
 
+def test_search_query_variants_relax_share_class_terms_only():
+    assert search_query_variants(" iShares  NASDAQ 100 (Acc) ") == (
+        "iShares NASDAQ 100 (Acc)",
+        "iShares NASDAQ 100",
+    )
+    assert search_query_variants("Vanguard FTSE All-World") == (
+        "Vanguard FTSE All-World",
+    )
+
+
 def test_search_results_prioritize_etfs_without_dropping_other_funds():
     quotes = [
         {
@@ -129,6 +140,58 @@ def test_search_results_prioritize_etfs_without_dropping_other_funds():
     assert candidates[3].provider_type == ""
 
 
+def test_symbol_search_prioritizes_exact_base_and_complete_name():
+    quotes = [
+        {
+            "symbol": "SXRV.HM",
+            "shortname": "iShsVII-NASDAQ 100 UCITS ETF R",
+            "exchDisp": "Hamburg",
+            "quoteType": "ETF",
+        },
+        {
+            "symbol": "SXRVD.XD",
+            "shortname": "iShares NASDAQ 100 UCITS ETF",
+            "exchDisp": "DXE",
+            "quoteType": "ETF",
+        },
+        {
+            "symbol": "SXRV.SG",
+            "shortname": "iShares NASDAQ 100 UCITS ETF",
+            "exchDisp": "Stuttgart",
+            "quoteType": "MUTUALFUND",
+        },
+        {
+            "symbol": "SXRV.DE",
+            "longname": "iShares NASDAQ 100 UCITS ETF USD (Acc)",
+            "exchDisp": "XETRA",
+            "quoteType": "ETF",
+        },
+    ]
+
+    candidates = normalize_search_results(quotes, query="sxrv")
+
+    assert [candidate.symbol for candidate in candidates] == [
+        "SXRV.DE",
+        "SXRV.HM",
+        "SXRV.SG",
+        "SXRVD.XD",
+    ]
+
+
+def test_full_yahoo_symbol_outranks_provider_classification():
+    quotes = [
+        {"symbol": "SXRV.DE", "quoteType": "ETF"},
+        {"symbol": "SXRV.SG", "quoteType": "MUTUALFUND"},
+    ]
+
+    candidates = normalize_search_results(quotes, query="SXRV.SG")
+
+    assert [candidate.symbol for candidate in candidates] == [
+        "SXRV.SG",
+        "SXRV.DE",
+    ]
+
+
 def test_search_instruments_uses_injected_factory_and_no_market_history_call():
     calls = []
 
@@ -170,6 +233,49 @@ def test_search_instruments_enforces_result_limit_on_provider_response():
     )
 
     assert len(candidates) == 8
+
+
+def test_search_instruments_retries_without_share_class_hint_and_reranks():
+    calls = []
+
+    class SearchResult:
+        def __init__(self, quotes):
+            self.quotes = quotes
+
+    def search_factory(query, **kwargs):
+        calls.append(query)
+        if query == "iShares NASDAQ 100 (Acc)":
+            return SearchResult([])
+        return SearchResult(
+            [
+                {
+                    "symbol": "EXXT.DE",
+                    "longname": "iShares NASDAQ-100 UCITS ETF (DE)",
+                    "quoteType": "ETF",
+                },
+                {
+                    "symbol": "NASQ.AS",
+                    "longname": (
+                        "iShares NASDAQ 100 Swap UCITS ETF USD (Acc)"
+                    ),
+                    "quoteType": "ETF",
+                },
+            ]
+        )
+
+    candidates = search_instruments(
+        "iShares NASDAQ 100 (Acc)",
+        search_factory=search_factory,
+    )
+
+    assert calls == [
+        "iShares NASDAQ 100 (Acc)",
+        "iShares NASDAQ 100",
+    ]
+    assert [candidate.symbol for candidate in candidates] == [
+        "NASQ.AS",
+        "EXXT.DE",
+    ]
 
 
 def test_search_instruments_maps_provider_failure_and_empty_results():

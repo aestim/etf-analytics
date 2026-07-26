@@ -5,6 +5,8 @@ Run after: docker compose up, ingest, dbt run.
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -73,6 +75,7 @@ SEARCH_QUERY_KEY = "custom_etf_search_query"
 SEARCH_RESULTS_KEY = "custom_etf_search_results"
 SEARCH_DIRECT_FALLBACK_KEY = "custom_etf_direct_fallback"
 SEARCH_GENERATION_KEY = "custom_etf_search_generation"
+SEARCH_SELECTED_SYMBOL_KEY = "custom_etf_selected_symbol"
 
 
 def _store_search_state(
@@ -81,21 +84,52 @@ def _store_search_state(
     *,
     direct_fallback: bool,
 ) -> None:
-    """Replace search state so a prior radio selection cannot leak forward."""
+    """Replace search state so a prior candidate selection cannot leak forward."""
 
     st.session_state[SEARCH_QUERY_KEY] = query
     st.session_state[SEARCH_RESULTS_KEY] = candidates
     st.session_state[SEARCH_DIRECT_FALLBACK_KEY] = direct_fallback
+    st.session_state[SEARCH_SELECTED_SYMBOL_KEY] = None
     generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
     st.session_state[SEARCH_GENERATION_KEY] = generation + 1
 
 
-def _candidate_label(candidate: InstrumentCandidate, lang: Language) -> str:
-    exchange = candidate.exchange or tr("custom.exchange_unknown", lang)
-    provider_type = candidate.provider_type or tr("custom.type_unknown", lang)
+def _candidate_matches_filter(
+    candidate: InstrumentCandidate,
+    selected_filter: str,
+) -> bool:
+    if selected_filter == "all":
+        return True
+    is_etf = candidate.provider_type.upper() == "ETF"
+    return is_etf if selected_filter == "etf" else not is_etf
+
+
+def _candidate_identity_html(
+    candidate: InstrumentCandidate,
+    lang: Language,
+) -> str:
+    """Render provider text as escaped, non-interactive card content."""
+
+    badge = html.escape(candidate.symbol.partition(".")[0][:4])
+    name = html.escape(candidate.display_name)
+    symbol = html.escape(candidate.symbol)
+    exchange = html.escape(
+        candidate.exchange or tr("custom.exchange_unknown", lang)
+    )
+    provider_type = html.escape(
+        candidate.provider_type or tr("custom.type_unknown", lang)
+    )
     return (
-        f"{candidate.display_name} — {candidate.symbol} · {exchange} · "
-        f"{tr('custom.provider_type', lang)}: {provider_type}"
+        "<div style='display:flex;gap:.75rem;align-items:center'>"
+        "<div style='min-width:2.8rem;height:2.8rem;border-radius:.75rem;"
+        "display:flex;align-items:center;justify-content:center;"
+        "background:#12a8d8;color:white;font-size:.72rem;font-weight:700'>"
+        f"{badge}</div>"
+        "<div style='min-width:0'>"
+        f"<div style='font-weight:650;line-height:1.25'>{name}</div>"
+        "<div style='opacity:.68;font-size:.82rem;margin-top:.2rem'>"
+        f"{symbol} · {exchange} · {provider_type}</div>"
+        "</div></div>"
     )
 
 
@@ -147,11 +181,19 @@ def custom_etf_controls(
     with st.expander(tr("custom.title", lang)):
         st.caption(tr("custom.help", lang))
         with st.form("custom_etf_search_form"):
-            raw_query = st.text_input(
+            input_col, search_col = st.columns(
+                [5, 1],
+                vertical_alignment="bottom",
+            )
+            raw_query = input_col.text_input(
                 tr("custom.input_label", lang),
                 placeholder=tr("custom.input_placeholder", lang),
             )
-            submitted = st.form_submit_button(tr("custom.search", lang))
+            submitted = search_col.form_submit_button(
+                tr("custom.search", lang),
+                type="primary",
+                width="stretch",
+            )
 
         if submitted:
             try:
@@ -207,6 +249,7 @@ def custom_etf_controls(
                         "custom.results_for",
                         lang,
                         query=search_query,
+                        count=len(candidates),
                     )
                 )
             if looks_like_isin(search_query):
@@ -214,26 +257,81 @@ def custom_etf_controls(
             else:
                 st.caption(tr("custom.verify_listing", lang))
 
-            candidates_by_symbol = {
-                candidate.symbol: candidate for candidate in candidates
-            }
-            selected_symbol = st.radio(
-                tr("custom.search_results", lang),
-                options=list(candidates_by_symbol),
-                format_func=lambda symbol: _candidate_label(
-                    candidates_by_symbol[symbol], lang
+            generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
+            selected_filter = st.segmented_control(
+                tr("custom.filter_label", lang),
+                options=["all", "etf", "other"],
+                default="all",
+                required=True,
+                format_func=lambda value: tr(
+                    f"custom.filter_{value}",
+                    lang,
                 ),
-                key=(
-                    "custom_etf_choice_"
-                    f"{st.session_state.get(SEARCH_GENERATION_KEY, 0)}"
-                ),
+                key=f"custom_etf_filter_{generation}",
+                label_visibility="collapsed",
             )
-            if st.button(
-                tr("custom.add_selected", lang),
-                key=f"add_custom_etf_{search_query}",
-            ):
-                selected = candidate_for_symbol(candidates, selected_symbol)
-                _add_custom_symbol(selected.symbol, returns_df, lang)
+            filtered_candidates = tuple(
+                candidate
+                for candidate in candidates
+                if _candidate_matches_filter(candidate, selected_filter)
+            )
+            if not filtered_candidates:
+                st.info(tr("custom.no_filtered_results", lang))
+
+            selected_symbol = st.session_state.get(
+                SEARCH_SELECTED_SYMBOL_KEY
+            )
+            for candidate in filtered_candidates:
+                is_selected = selected_symbol == candidate.symbol
+                with st.container(border=True):
+                    identity_col, action_col = st.columns(
+                        [5, 1.35],
+                        vertical_alignment="center",
+                    )
+                    identity_col.markdown(
+                        _candidate_identity_html(candidate, lang),
+                        unsafe_allow_html=True,
+                    )
+                    if is_selected:
+                        action_col.button(
+                            tr("custom.selected_short", lang),
+                            key=(
+                                f"selected_custom_etf_"
+                                f"{generation}_{candidate.symbol}"
+                            ),
+                            disabled=True,
+                            width="stretch",
+                        )
+                        if st.button(
+                            tr("custom.add_selected", lang),
+                            type="primary",
+                            key=(
+                                f"add_custom_etf_"
+                                f"{generation}_{candidate.symbol}"
+                            ),
+                            width="stretch",
+                        ):
+                            selected = candidate_for_symbol(
+                                candidates,
+                                candidate.symbol,
+                            )
+                            _add_custom_symbol(
+                                selected.symbol,
+                                returns_df,
+                                lang,
+                            )
+                    elif action_col.button(
+                        tr("custom.select", lang),
+                        key=(
+                            f"select_custom_etf_"
+                            f"{generation}_{candidate.symbol}"
+                        ),
+                        width="stretch",
+                    ):
+                        st.session_state[SEARCH_SELECTED_SYMBOL_KEY] = (
+                            candidate.symbol
+                        )
+                        st.rerun()
         elif search_query:
             st.info(tr("custom.no_results", lang))
 

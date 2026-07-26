@@ -108,16 +108,16 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "🔎 현재 세션에 추가할 ETF 찾기",
     },
     "custom.help": {
-        "en": "Search by ETF name, ISIN or Yahoo Finance symbol. Yahoo results are best-effort, so choose the listing you use with your broker.",
-        "ko": "ETF 이름, ISIN 또는 Yahoo Finance 종목 코드로 검색하세요. Yahoo 결과는 완전하지 않을 수 있으므로 실제 이용하는 상장 시장을 직접 선택하세요.",
+        "en": "Search by ETF name, ISIN or ticker. Exact ticker matches and complete Yahoo names appear first, but no exchange is selected automatically.",
+        "ko": "ETF 이름, ISIN 또는 티커로 검색하세요. 정확한 티커와 Yahoo의 전체 이름이 있는 후보를 먼저 보여주지만 거래소는 자동 선택하지 않습니다.",
     },
     "custom.input_label": {
         "en": "ETF name, ISIN or Yahoo Finance symbol",
         "ko": "ETF 이름, ISIN 또는 Yahoo Finance 종목 코드",
     },
     "custom.input_placeholder": {
-        "en": "e.g. Vanguard FTSE All-World, IE00BK5BQT80 or VWCE.DE",
-        "ko": "예: Vanguard FTSE All-World, IE00BK5BQT80 또는 VWCE.DE",
+        "en": "e.g. SXRV, Vanguard FTSE All-World or IE00BK5BQT80",
+        "ko": "예: SXRV, Vanguard FTSE All-World 또는 IE00BK5BQT80",
     },
     "custom.search": {"en": "Search", "ko": "검색"},
     "custom.searching": {
@@ -125,12 +125,40 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "Yahoo Finance에서 검색하는 중...",
     },
     "custom.results_for": {
-        "en": "Search results for `{query}`",
-        "ko": "`{query}` 검색 결과",
+        "en": "Yahoo listings for `{query}`: {count}",
+        "ko": "`{query}`의 Yahoo 상장 후보: {count}개",
     },
     "custom.search_results": {
-        "en": "Choose a listing",
-        "ko": "상장 시장 선택",
+        "en": "Choose a listing, then add it to this session",
+        "ko": "상장 종목을 고른 뒤 현재 세션에 추가하세요",
+    },
+    "custom.filter_label": {
+        "en": "Filter search results",
+        "ko": "검색 결과 필터",
+    },
+    "custom.filter_all": {
+        "en": "All",
+        "ko": "전체",
+    },
+    "custom.filter_etf": {
+        "en": "ETFs",
+        "ko": "ETF",
+    },
+    "custom.filter_other": {
+        "en": "Other Yahoo types",
+        "ko": "기타 Yahoo 분류",
+    },
+    "custom.no_filtered_results": {
+        "en": "No candidates match this filter.",
+        "ko": "이 필터에 맞는 후보가 없습니다.",
+    },
+    "custom.select": {
+        "en": "Select",
+        "ko": "선택",
+    },
+    "custom.selected_short": {
+        "en": "Selected",
+        "ko": "선택됨",
     },
     "custom.add_selected": {
         "en": "Add selected ETF",
@@ -149,8 +177,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "ETF 이름, ISIN 또는 Yahoo Finance 종목 코드를 입력하세요.",
     },
     "custom.no_results": {
-        "en": "No candidates were found. Try the full fund name, an ISIN, or an exchange-suffixed Yahoo symbol.",
-        "ko": "검색 후보가 없습니다. 전체 상품명, ISIN 또는 거래소 접미사가 붙은 Yahoo 종목 코드로 다시 검색하세요.",
+        "en": "No candidates were found. Try fewer words, an ISIN, or an exchange-suffixed Yahoo symbol.",
+        "ko": "검색 후보가 없습니다. 단어 수를 줄이거나 ISIN 또는 거래소 접미사가 붙은 Yahoo 종목 코드로 다시 검색하세요.",
     },
     "custom.search_unavailable": {
         "en": "Yahoo search is temporarily unavailable. If you entered an exact symbol, you may still try it below.",
@@ -161,8 +189,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "Yahoo 검색은 모든 상장 시장을 반환하거나 정확한 ISIN·share class 일치를 보장하지 않습니다. 브로커나 발행사에서 확인하세요.",
     },
     "custom.verify_listing": {
-        "en": "Similar names can belong to different accumulating or distributing share classes. Verify the selected listing with your broker or issuer.",
-        "ko": "이름이 비슷해도 적립형·분배형 등 다른 share class일 수 있습니다. 선택한 상품을 브로커나 발행사에서 확인하세요.",
+        "en": "Yahoo may abbreviate names, and similar names can be different share classes. Verify the selected symbol and exchange with your broker or issuer.",
+        "ko": "Yahoo가 이름을 축약할 수 있고 비슷한 이름도 서로 다른 share class일 수 있습니다. 선택한 종목 코드와 거래소를 브로커나 발행사에서 확인하세요.",
     },
     "custom.provider_type": {
         "en": "Yahoo type",

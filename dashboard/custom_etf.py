@@ -23,6 +23,25 @@ MAX_SEARCH_RESULTS = 8
 MAX_SEARCH_QUERY_LENGTH = 160
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,19}$")
 ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+SEARCH_TOKEN_PATTERN = re.compile(r"[A-Z0-9]+")
+SHARE_CLASS_SEARCH_TERMS = {
+    "ACC",
+    "ACCUMULATING",
+    "ACCUMULATION",
+    "CAPITALISATION",
+    "CAPITALIZATION",
+    "DIST",
+    "DISTRIBUTING",
+    "DISTRIBUTION",
+}
+SEARCH_TERM_ALIASES = {
+    "ACCUMULATING": "ACC",
+    "ACCUMULATION": "ACC",
+    "CAPITALISATION": "ACC",
+    "CAPITALIZATION": "ACC",
+    "DISTRIBUTING": "DIST",
+    "DISTRIBUTION": "DIST",
+}
 
 PRICE_COLUMNS = ["ticker", "price_date", "adj_close", "volume"]
 RETURN_COLUMNS = PRICE_COLUMNS + ["daily_return"]
@@ -90,6 +109,22 @@ def normalize_search_query(value: str) -> str:
     return query
 
 
+def search_query_variants(value: str) -> tuple[str, ...]:
+    """Return one exact query and one safe share-class-relaxed fallback."""
+
+    query = normalize_search_query(value)
+    tokens = query.split()
+    relaxed_tokens = [
+        token
+        for token in tokens
+        if token.strip("()[]{}.,").upper() not in SHARE_CLASS_SEARCH_TERMS
+    ]
+    relaxed_query = " ".join(relaxed_tokens)
+    if relaxed_query and relaxed_query != query:
+        return query, relaxed_query
+    return (query,)
+
+
 def looks_like_isin(value: str) -> bool:
     """Return whether the normalized query has an ISIN-shaped value."""
 
@@ -109,7 +144,7 @@ def _first_text(*values: Any) -> str:
     return ""
 
 
-def _candidate_rank(candidate: InstrumentCandidate) -> int:
+def _provider_type_rank(candidate: InstrumentCandidate) -> int:
     """Prioritize provider-labeled ETFs without discarding other funds."""
 
     provider_type = candidate.provider_type.upper()
@@ -120,14 +155,60 @@ def _candidate_rank(candidate: InstrumentCandidate) -> int:
     return 2
 
 
+def _symbol_shaped_query(query: str) -> str | None:
+    """Return an uppercase ticker query, excluding ISIN-shaped values."""
+
+    normalized = query.upper()
+    if ISIN_PATTERN.fullmatch(normalized):
+        return None
+    if TICKER_PATTERN.fullmatch(normalized):
+        return normalized
+    return None
+
+
+def _canonical_search_terms(value: str) -> frozenset[str]:
+    terms = SEARCH_TOKEN_PATTERN.findall(value.upper())
+    return frozenset(SEARCH_TERM_ALIASES.get(term, term) for term in terms)
+
+
+def _candidate_rank(
+    candidate: InstrumentCandidate,
+    *,
+    query_symbol: str | None,
+    term_matches: int,
+    has_long_name: bool,
+    provider_position: int,
+) -> tuple[int, int, int, int, int, int]:
+    """Rank exact symbols and complete names before weaker Yahoo matches."""
+
+    exact_symbol = query_symbol is not None and candidate.symbol == query_symbol
+    exact_base_symbol = (
+        query_symbol is not None
+        and "." not in query_symbol
+        and candidate.symbol.partition(".")[0] == query_symbol
+    )
+    return (
+        0 if exact_symbol else 1,
+        0 if exact_base_symbol else 1,
+        -term_matches,
+        _provider_type_rank(candidate),
+        0 if has_long_name else 1,
+        provider_position,
+    )
+
+
 def normalize_search_results(
     quotes: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    query: str = "",
 ) -> tuple[InstrumentCandidate, ...]:
-    """Map partial Yahoo quote dictionaries to stable, deduplicated candidates."""
+    """Map partial Yahoo quote dictionaries to ranked, deduplicated candidates."""
 
-    candidates: list[InstrumentCandidate] = []
+    query_symbol = _symbol_shaped_query(query) if query else None
+    requested_terms = _canonical_search_terms(query)
+    ranked_candidates: list[tuple[InstrumentCandidate, bool, int]] = []
     seen_symbols: set[str] = set()
-    for quote in quotes:
+    for provider_position, quote in enumerate(quotes):
         if not isinstance(quote, dict):
             continue
         raw_symbol = quote.get("symbol")
@@ -140,27 +221,42 @@ def normalize_search_results(
         if symbol in seen_symbols:
             continue
         seen_symbols.add(symbol)
-        candidates.append(
-            InstrumentCandidate(
-                symbol=symbol,
-                display_name=_first_text(
-                    quote.get("longname"),
-                    quote.get("shortname"),
-                    symbol,
-                ),
-                exchange=_first_text(
-                    quote.get("exchDisp"),
-                    quote.get("exchange"),
-                ),
-                provider_type=_first_text(
-                    quote.get("quoteType"),
-                    quote.get("typeDisp"),
-                ),
-            )
+        long_name = _first_text(quote.get("longname"))
+        candidate = InstrumentCandidate(
+            symbol=symbol,
+            display_name=_first_text(
+                long_name,
+                quote.get("shortname"),
+                symbol,
+            ),
+            exchange=_first_text(
+                quote.get("exchDisp"),
+                quote.get("exchange"),
+            ),
+            provider_type=_first_text(
+                quote.get("quoteType"),
+                quote.get("typeDisp"),
+            ),
+        )
+        ranked_candidates.append(
+            (candidate, bool(long_name), provider_position)
         )
 
-    # Python's sort is stable, preserving Yahoo relevance inside each group.
-    return tuple(sorted(candidates, key=_candidate_rank))
+    ranked_candidates.sort(
+        key=lambda item: _candidate_rank(
+            item[0],
+            query_symbol=query_symbol,
+            term_matches=len(
+                requested_terms
+                & _canonical_search_terms(
+                    f"{item[0].symbol} {item[0].display_name}"
+                )
+            ),
+            has_long_name=item[1],
+            provider_position=item[2],
+        )
+    )
+    return tuple(item[0] for item in ranked_candidates)
 
 
 def search_instruments(
@@ -171,34 +267,41 @@ def search_instruments(
 ) -> tuple[InstrumentCandidate, ...]:
     """Search Yahoo for names, ISINs or symbols and return selection candidates."""
 
-    normalized_query = normalize_search_query(query)
+    query_variants = search_query_variants(query)
+    normalized_query = query_variants[0]
     if search_factory is None:
         import yfinance as yf
 
         search_factory = yf.Search
 
     result_limit = max(1, min(int(max_results), MAX_SEARCH_RESULTS))
-    try:
-        search = search_factory(
-            normalized_query,
-            max_results=result_limit,
-            news_count=0,
-            lists_count=0,
-            include_cb=False,
-            include_nav_links=False,
-            include_research=False,
-            include_cultural_assets=False,
-            enable_fuzzy_query=False,
-            recommended=0,
-            timeout=10,
-            raise_errors=True,
-        )
-        quotes = getattr(search, "quotes", None)
-        if not isinstance(quotes, (list, tuple)):
-            raise TypeError("Yahoo Search.quotes was not a list or tuple")
-    except Exception as exc:
-        raise InstrumentSearchError(normalized_query) from exc
-    return normalize_search_results(quotes)[:result_limit]
+    for provider_query in query_variants:
+        try:
+            search = search_factory(
+                provider_query,
+                max_results=result_limit,
+                news_count=0,
+                lists_count=0,
+                include_cb=False,
+                include_nav_links=False,
+                include_research=False,
+                include_cultural_assets=False,
+                enable_fuzzy_query=False,
+                recommended=0,
+                timeout=10,
+                raise_errors=True,
+            )
+            quotes = getattr(search, "quotes", None)
+            if not isinstance(quotes, (list, tuple)):
+                raise TypeError("Yahoo Search.quotes was not a list or tuple")
+        except Exception as exc:
+            raise InstrumentSearchError(normalized_query) from exc
+        if quotes:
+            return normalize_search_results(
+                quotes,
+                query=normalized_query,
+            )[:result_limit]
+    return ()
 
 
 def direct_symbol_candidate(query: str) -> InstrumentCandidate | None:
