@@ -5,8 +5,9 @@ aside for staged investing.  This makes lump-sum, staged-entry and rebalancing
 results comparable from the same starting budget.
 
 Historical adjusted prices already reflect each ETF's operating expenses,
-dividends and stock splits.  Trading fees, taxes, slippage, cash interest and
-currency movements are intentionally excluded.
+dividends and stock splits. Callers must supply prices converted to one account
+currency. Trading fees, taxes, slippage, currency-conversion costs and cash
+interest are intentionally excluded.
 """
 
 from __future__ import annotations

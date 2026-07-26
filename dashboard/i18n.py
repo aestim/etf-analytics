@@ -82,6 +82,14 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "A more specific category within the broad asset class.",
         "ko": "같은 자산 안에서 나누는 더 자세한 분류입니다.",
     },
+    "home.not_classified": {
+        "en": "Not classified",
+        "ko": "미분류",
+    },
+    "home.session_guide_description": {
+        "en": "Added from Yahoo for this session ({exchange}, {provider_type}, {currency}). Asset type, category and leverage are not classified because the app does not have verified reference data for this listing.",
+        "ko": "이번 세션에 Yahoo에서 추가한 종목입니다({exchange}, {provider_type}, {currency}). 이 상장 종목에 대해 검증된 기준 정보가 없어 자산 유형, 세부 분류, 레버리지는 추측하지 않고 미분류로 표시합니다.",
+    },
     "home.leverage": {"en": "Daily leverage", "ko": "레버리지 배수"},
     "home.leverage_help": {
         "en": "1 means unleveraged. 2 and 3 target two or three times the daily move.",
@@ -221,6 +229,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Unclassified",
         "ko": "분류 정보 없음",
     },
+    "custom.currency_unknown": {
+        "en": "Currency unknown",
+        "ko": "통화 정보 없음",
+    },
     "custom.loading": {
         "en": "Loading history for {ticker}...",
         "ko": "{ticker} 과거 데이터를 불러오는 중...",
@@ -249,6 +261,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "No usable daily history was found for {ticker}. Check the symbol and exchange suffix.",
         "ko": "{ticker}의 일별 데이터를 찾지 못했습니다. 종목 코드와 거래소 접미사를 확인하세요.",
     },
+    "custom.currency_unavailable": {
+        "en": "{ticker} was not added because Yahoo did not provide a supported USD, EUR or GBP quote currency.",
+        "ko": "Yahoo에서 {ticker}의 상장통화를 확인하지 못했거나 USD, EUR, GBP 이외의 통화여서 추가하지 않았습니다.",
+    },
     "custom.insufficient": {
         "en": "{ticker} has fewer than 30 usable trading days, so it was not added.",
         "ko": "{ticker}는 사용 가능한 거래일이 30일 미만이어서 추가하지 않았습니다.",
@@ -276,12 +292,48 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "세션 전용: 세션이 끝나면 사라지며 ETF 질문하기에는 포함되지 않습니다.",
     },
     "custom.currency_notice": {
-        "en": "Data remains in each listing's trading currency. The app does not convert currencies or verify ETF classification, tax status, or local investor eligibility.",
-        "ko": "각 상장 종목의 거래 통화를 그대로 사용합니다. 환전, ETF 상품 분류, 세금 또는 현지 투자자격은 확인하지 않습니다.",
+        "en": "USD, EUR and GBP listings are converted with historical daily FX rates when base-currency results are selected. The app does not verify ETF classification, tax status or local investor eligibility.",
+        "ko": "기준통화 결과에서는 USD, EUR, GBP 상장 종목을 과거 일별 환율로 변환합니다. ETF 상품 분류, 세금 또는 현지 투자자격은 확인하지 않습니다.",
     },
     "custom.strategy_notice": {
-        "en": "Session ETFs available here: {tickers}. Their returns remain in each listing currency; no FX conversion is applied.",
-        "ko": "현재 세션 ETF: {tickers}. 각 상장 통화 기준 수익률이며 환율 변환은 적용하지 않습니다.",
+        "en": "Session ETFs available here: {tickers}. Prices are converted to {currency} before the simulation.",
+        "ko": "현재 세션 ETF: {tickers}. 시뮬레이션 전에 가격을 {currency} 기준으로 변환합니다.",
+    },
+    "currency.base_label": {
+        "en": "Base currency",
+        "ko": "기준통화",
+    },
+    "currency.base_help": {
+        "en": "The currency used to measure returns and portfolio values. USD is the default.",
+        "ko": "수익률과 투자금액을 계산할 통화입니다. 기본값은 USD입니다.",
+    },
+    "currency.strategy_help": {
+        "en": "Every ETF price is converted to this currency before purchases, rebalancing and portfolio values are calculated.",
+        "ko": "매수 수량, 리밸런싱 및 투자금액을 계산하기 전에 모든 ETF 가격을 이 통화로 변환합니다.",
+    },
+    "currency.return_basis_label": {
+        "en": "Return basis",
+        "ko": "수익률 기준",
+    },
+    "currency.return_basis_base": {
+        "en": "Base currency",
+        "ko": "기준통화",
+    },
+    "currency.return_basis_listing": {
+        "en": "Listing currencies",
+        "ko": "각 상장통화",
+    },
+    "currency.return_basis_help": {
+        "en": "Base currency includes daily FX movements. Listing currencies shows each listing's local return and is not an investor-currency comparison.",
+        "ko": "기준통화는 일별 환율 변동을 포함합니다. 각 상장통화는 현지 가격 수익률이며 투자자 통화 기준 비교가 아닙니다.",
+    },
+    "currency.conversion_error": {
+        "en": "Currency conversion is unavailable, so the app did not mix unconverted prices. Details: {detail}",
+        "ko": "환율 변환을 할 수 없어 변환되지 않은 가격을 섞어 계산하지 않았습니다. 상세: {detail}",
+    },
+    "currency.missing_metadata": {
+        "en": "These older session ETFs have no stored quote currency and were excluded: {tickers}. Remove and add them again.",
+        "ko": "이전에 추가한 세션 ETF는 저장된 상장통화가 없어 제외했습니다: {tickers}. 삭제한 뒤 다시 추가하세요.",
     },
     "home.adjusted_price": {
         "en": "Dividend-adjusted price",
@@ -291,6 +343,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Raw listing prices adjusted for dividends and splits. Different currencies and face values are not directly comparable.",
         "ko": "배당과 분할을 반영한 상장 가격입니다. 통화와 액면가격이 다르면 직접 비교할 수 없습니다.",
     },
+    "home.adjusted_price_base_caption": {
+        "en": "Dividend-adjusted listing prices converted to {currency} with daily FX rates. Different face values still make raw prices unsuitable for performance comparison.",
+        "ko": "배당 반영 상장 가격을 일별 환율로 {currency}로 변환했습니다. 액면가격이 다르므로 원가격 자체는 성과 비교에 적합하지 않습니다.",
+    },
     "home.indexed_price": {
         "en": "Indexed price comparison",
         "ko": "기준값으로 가격 비교",
@@ -298,6 +354,10 @@ COPY: dict[str, dict[Language, str]] = {
     "home.indexed_price_caption": {
         "en": "Each ETF starts at 100 on the first shared trading date ({date}), so relative growth is comparable.",
         "ko": "모든 ETF가 함께 거래된 첫날({date})을 100으로 맞춰 상대적 성장을 비교합니다.",
+    },
+    "home.indexed_price_base_caption": {
+        "en": "Prices are converted to {currency}, then each ETF starts at 100 on the first shared trading date ({date}). FX movements are included.",
+        "ko": "가격을 {currency}로 변환한 뒤 모든 ETF가 함께 거래된 첫날({date})을 100으로 맞췄습니다. 환율 변동이 포함됩니다.",
     },
     "home.show_raw_prices": {
         "en": "Show raw listing prices",
@@ -328,6 +388,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Gain or loss from the same shared start date ({date})",
         "ko": "같은 공통 시작일({date})부터의 수익률입니다",
     },
+    "home.cumulative_return_base_caption": {
+        "en": "Gain or loss in {currency} from the same shared start date ({date}), including FX movements",
+        "ko": "같은 공통 시작일({date})부터 {currency} 기준 수익률이며 환율 변동을 포함합니다",
+    },
     "home.volatility": {
         "en": "30-day price swings",
         "ko": "최근 30일 가격 변동",
@@ -335,6 +399,10 @@ COPY: dict[str, dict[Language, str]] = {
     "home.volatility_caption": {
         "en": "Higher values mean the ETF moved more sharply over the past 30 trading days",
         "ko": "값이 클수록 최근 30거래일 동안 가격이 더 크게 오르내렸습니다",
+    },
+    "home.volatility_base_caption": {
+        "en": "30-trading-day price swings measured in {currency}, including FX movements",
+        "ko": "환율 변동을 포함해 {currency} 기준으로 계산한 최근 30거래일 가격 변동입니다",
     },
     "home.latest": {"en": "Latest risk snapshot", "ko": "최근 위험 지표"},
     "home.as_of_date": {"en": "Data through", "ko": "기준일"},
@@ -748,8 +816,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "계산에 사용한 가정",
     },
     "simulation.assumptions_body": {
-        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits.\n- Fractional shares are allowed and idle cash earns 0%.\n- During staged entry, yearly rebalancing only adjusts money already invested; reserved cash follows the selected purchase schedule.\n- Trading fees, taxes, slippage, and currency movements are excluded.\n- This is a historical educational simulation, not a forecast or recommendation.",
-        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있습니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 나눠 투자하는 동안 리밸런싱은 이미 투자된 금액에만 적용하며, 남은 현금은 정한 매수 일정에 따라 투자합니다.\n- 거래 수수료, 세금, 매수·매도 가격 차이, 환율 변동은 제외합니다.\n- 과거 데이터를 이용한 학습용 시뮬레이션이며 미래 예측이나 투자 추천이 아닙니다.",
+        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits.\n- Every listing price is converted to the selected base currency with historical daily FX rates before portfolio calculations.\n- Fractional shares are allowed and idle cash earns 0%.\n- During staged entry, yearly rebalancing only adjusts money already invested; reserved cash follows the selected purchase schedule.\n- Trading fees, taxes, slippage and currency-conversion costs are excluded.\n- This is a historical educational simulation, not a forecast or recommendation.",
+        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있습니다.\n- 포트폴리오를 계산하기 전에 모든 상장 가격을 과거 일별 환율로 선택한 기준통화로 변환합니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 나눠 투자하는 동안 리밸런싱은 이미 투자된 금액에만 적용하며, 남은 현금은 정한 매수 일정에 따라 투자합니다.\n- 거래 수수료, 세금, 매수·매도 가격 차이 및 환전 비용은 제외합니다.\n- 과거 데이터를 이용한 학습용 시뮬레이션이며 미래 예측이나 투자 추천이 아닙니다.",
     },
     "ask.title": {"en": "💬 Ask About ETFs", "ko": "💬 ETF 정보 물어보기"},
     "ask.subtitle": {

@@ -11,6 +11,7 @@ from custom_etf import (
     MAX_CUSTOM_ETFS,
     CustomEtfLimitError,
     DuplicateTickerError,
+    InstrumentCandidate,
     InstrumentSearchError,
     InvalidSearchQueryError,
     InvalidTickerError,
@@ -33,6 +34,7 @@ from custom_etf import (
     remove_session_ticker,
     search_instruments,
     search_query_variants,
+    session_instrument_candidates,
     session_tickers,
 )
 
@@ -122,6 +124,7 @@ def test_search_results_prioritize_etfs_without_dropping_other_funds():
             "shortname": "ignored",
             "exchDisp": "XETRA",
             "quoteType": "ETF",
+            "currency": "EUR",
         },
         {
             "symbol": "VWRL.AS",
@@ -147,6 +150,7 @@ def test_search_results_prioritize_etfs_without_dropping_other_funds():
         "UNKNOWN.L",
     ]
     assert candidates[0].display_name.endswith("USD Accumulation")
+    assert candidates[0].currency == "EUR"
     assert candidates[1].exchange == "AMS"
     assert candidates[2].display_name == "Vanguard FTSE All-World"
     assert candidates[2].provider_type == "MUTUALFUND"
@@ -676,6 +680,14 @@ def test_session_add_remove_duplicate_and_limit_guards():
     state = {}
     add_session_prices(state, _history("VWCE.DE"))
     assert session_tickers(state) == ["VWCE.DE"]
+    assert session_instrument_candidates(state) == (
+        InstrumentCandidate(
+            symbol="VWCE.DE",
+            display_name="VWCE.DE",
+            exchange="",
+            provider_type="",
+        ),
+    )
 
     with pytest.raises(DuplicateTickerError):
         add_session_prices(state, _history("VWCE.DE"))
@@ -688,6 +700,30 @@ def test_session_add_remove_duplicate_and_limit_guards():
     remove_session_ticker(state, "VWCE.DE")
     assert "VWCE.DE" not in session_tickers(state)
     assert isinstance(state[CUSTOM_ETF_STATE_KEY], pd.DataFrame)
+
+
+def test_session_search_metadata_is_stored_and_removed_with_prices():
+    state = {}
+    candidate = InstrumentCandidate(
+        symbol="NQSE.DE",
+        display_name="iShares NASDAQ 100 UCITS ETF",
+        exchange="XETRA",
+        provider_type="ETF",
+        average_daily_volume=252_746,
+        currency="EUR",
+    )
+
+    add_session_prices(
+        state,
+        _history("NQSE.DE"),
+        candidate=candidate,
+    )
+
+    assert session_instrument_candidates(state) == (candidate,)
+
+    remove_session_ticker(state, "NQSE.DE")
+
+    assert session_instrument_candidates(state) == ()
 
 
 def test_custom_data_merges_without_mutating_base_frames():

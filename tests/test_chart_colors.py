@@ -72,6 +72,12 @@ def test_dashboard_keeps_beginner_onboarding_and_small_default_comparison():
     assert 'tr("home.tab_price", lang)' in source
     assert 'tr("home.tab_return", lang)' in source
     assert 'tr("home.tab_risk", lang)' in source
+    assert "BASE_CURRENCY_STATE_KEY" in source
+    assert "convert_prices_to_base_currency(" in source
+    assert 'options=["base", "listing"]' in source
+    assert "session_instrument_candidates(st.session_state)" in source
+    assert 'width="stretch"' in source
+    assert "width=280" in source
 
 
 def test_entrypoint_uses_session_preserving_navigation():
@@ -100,6 +106,8 @@ def test_strategy_lab_uses_compact_editor_and_result_tabs():
     assert 'tr("strategy.tab_details", lang)' in source
     assert "key=REFERENCE_SELECTION_STATE_KEY" in source
     assert 'key="strategy_view_mode"' not in source
+    assert "convert_prices_to_base_currency(" in source
+    assert "format_money(primary_metrics" in source
 
 
 def test_mobile_and_readability_defaults_are_part_of_the_app_contract():

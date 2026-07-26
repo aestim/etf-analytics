@@ -18,7 +18,22 @@ for _p in (_ROOT / "dashboard", _ROOT / "analytics"):
 
 import simulator as sim  # noqa: E402
 import strategies as strat  # noqa: E402
-from custom_etf import merge_custom_data, session_prices, session_tickers  # noqa: E402
+from currency_conversion import (  # noqa: E402
+    BASE_CURRENCY_STATE_KEY,
+    SUPPORTED_BASE_CURRENCIES,
+    CurrencyConversionError,
+    convert_prices_to_base_currency,
+    currency_symbol,
+    fetch_usd_exchange_rates,
+    format_compact_money,
+    format_money,
+)
+from custom_etf import (  # noqa: E402
+    merge_custom_data,
+    session_instrument_candidates,
+    session_prices,
+    session_tickers,
+)
 from db import (  # noqa: E402
     DATAFRAME_ROW_HEIGHT,
     PLOTLY_LAYOUT,
@@ -39,6 +54,13 @@ START_DATE_STATE_KEY = "strategy_start_date_v2"
 REFERENCE_SELECTION_STATE_KEY = "strategy_reference_examples_v2"
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_usd_exchange_rates(currencies: tuple[str, ...]) -> pd.DataFrame:
+    """Cache the daily FX series shared by all Strategy Lab calculations."""
+
+    return fetch_usd_exchange_rates(currencies)
+
+
 @dataclass(frozen=True)
 class PortfolioPlan:
     """One user-configured portfolio and its execution rules."""
@@ -48,32 +70,6 @@ class PortfolioPlan:
     weights: dict[str, float]
     deployment_months: int
     rebalance_annually: bool
-
-
-def _money(value: float, lang: str) -> str:
-    if lang == "ko":
-        return f"{value:,.0f}만원"
-    sign = "-" if value < 0 else ""
-    return f"{sign}${abs(value):,.0f}"
-
-
-def _compact_money(value: float, lang: str) -> str:
-    """Keep large reference-table values readable without hiding magnitude."""
-
-    magnitude = abs(value)
-    if lang == "ko":
-        if magnitude >= 100_000_000:
-            return f"{value / 100_000_000:,.2f}조원"
-        if magnitude >= 10_000:
-            return f"{value / 10_000:,.2f}억원"
-        return f"{value:,.0f}만원"
-    if magnitude >= 1_000_000_000_000:
-        return f"${value / 1_000_000_000_000:,.2f}T"
-    if magnitude >= 1_000_000_000:
-        return f"${value / 1_000_000_000:,.2f}B"
-    if magnitude >= 1_000_000:
-        return f"${value / 1_000_000:,.2f}M"
-    return _money(value, lang)
 
 
 def _percent(value: float) -> str:
@@ -93,7 +89,7 @@ def _curve_metrics(value: pd.Series) -> dict[str, float]:
     }
 
 
-def _value_chart(curves: dict[str, pd.Series], lang: str):
+def _value_chart(curves: dict[str, pd.Series], lang: str, currency: str):
     frame = pd.DataFrame(curves)
     frame.index.name = "price_date"
     long = frame.reset_index().melt(
@@ -115,10 +111,11 @@ def _value_chart(curves: dict[str, pd.Series], lang: str):
     )
     fig.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
     fig.update_xaxes(title_text="")
-    if lang == "ko":
-        fig.update_yaxes(title_text="", tickformat=",.0f", ticksuffix="만원")
-    else:
-        fig.update_yaxes(title_text="", tickformat="$,.0f")
+    fig.update_yaxes(
+        title_text="",
+        tickformat=",.0f",
+        tickprefix=currency_symbol(currency),
+    )
     return fig
 
 
@@ -400,6 +397,7 @@ def _strategy_editor_dialog(
     total_capital: float,
     requested_start: pd.Timestamp,
     lang: str,
+    currency: str,
 ) -> None:
     title_key = (
         "simulation.editor_primary_title"
@@ -438,10 +436,9 @@ def _strategy_editor_dialog(
             )
 
         if target == "primary":
-            unit = "만원" if lang == "ko" else "USD"
-            amount_step = 100.0 if lang == "ko" else 1_000.0
+            amount_step = 1_000.0
             editor_total = st.number_input(
-                tr("simulation.total_amount", lang, unit=unit),
+                tr("simulation.total_amount", lang, unit=currency),
                 min_value=amount_step,
                 step=amount_step,
                 help=tr("simulation.amount_help", lang),
@@ -499,7 +496,7 @@ def _strategy_editor_dialog(
             )
             st.session_state[state_key] = _plan_state(plan)
             if target == "primary":
-                st.session_state[f"{TOTAL_CAPITAL_STATE_KEY}_{lang}"] = float(
+                st.session_state[f"{TOTAL_CAPITAL_STATE_KEY}_{currency}"] = float(
                     editor_total
                 )
                 st.session_state[START_DATE_STATE_KEY] = editor_start.date()
@@ -517,6 +514,7 @@ def _allocation_summary(plan: PortfolioPlan) -> str:
 def _comparison_summary_frame(
     curves: dict[str, pd.Series],
     lang: str,
+    currency: str,
 ) -> pd.DataFrame:
     rows = []
     for name, curve in curves.items():
@@ -524,8 +522,8 @@ def _comparison_summary_frame(
         rows.append(
             {
                 tr("strategy.rule", lang): name,
-                tr("simulation.final_value", lang): _compact_money(
-                    metrics["final_value"], lang
+                tr("simulation.final_value", lang): format_compact_money(
+                    metrics["final_value"], currency
                 ),
                 tr("simulation.total_return", lang): _percent(metrics["total_return"]),
                 tr("simulation.max_drawdown", lang): _percent(metrics["max_drawdown"]),
@@ -610,6 +608,7 @@ def _render_custom_simulator(
     all_prices: pd.DataFrame,
     dim_etf: pd.DataFrame,
     lang: str,
+    currency: str,
 ) -> None:
     options = sorted(all_prices.columns)
     if not options:
@@ -626,8 +625,8 @@ def _render_custom_simulator(
         primary_plan = default_plan
         st.session_state[PRIMARY_PLAN_STATE_KEY] = _plan_state(primary_plan)
 
-    capital_key = f"{TOTAL_CAPITAL_STATE_KEY}_{lang}"
-    amount_default = 1_000.0 if lang == "ko" else 10_000.0
+    capital_key = f"{TOTAL_CAPITAL_STATE_KEY}_{currency}"
+    amount_default = 10_000.0
     total_capital = float(st.session_state.get(capital_key, amount_default))
     start_range = _available_start_date(all_prices, primary_plan.tickers)
     if start_range is None:
@@ -661,7 +660,7 @@ def _render_custom_simulator(
         primary_text.markdown(f"**{primary_plan.name}**")
         primary_text.caption(_allocation_summary(primary_plan))
         primary_text.caption(
-            f"{_money(total_capital, lang)} · "
+            f"{format_money(total_capital, currency)} · "
             f"{requested_start:%Y-%m-%d} · "
             f"{' · '.join(_plan_rule_parts(primary_plan, lang))}"
         )
@@ -684,6 +683,7 @@ def _render_custom_simulator(
                 total_capital,
                 requested_start,
                 lang,
+                currency,
             )
 
         if secondary_plan is not None:
@@ -694,9 +694,7 @@ def _render_custom_simulator(
             )
             secondary_text.markdown(f"**{secondary_plan.name}**")
             secondary_text.caption(_allocation_summary(secondary_plan))
-            secondary_text.caption(
-                " · ".join(_plan_rule_parts(secondary_plan, lang))
-            )
+            secondary_text.caption(" · ".join(_plan_rule_parts(secondary_plan, lang)))
             if secondary_actions.button(
                 tr("simulation.edit", lang),
                 key="strategy_edit_secondary",
@@ -716,6 +714,7 @@ def _render_custom_simulator(
                     total_capital,
                     requested_start,
                     lang,
+                    currency,
                 )
             if secondary_actions.button(
                 tr("simulation.remove_second", lang),
@@ -750,6 +749,7 @@ def _render_custom_simulator(
                 total_capital,
                 requested_start,
                 lang,
+                currency,
             )
 
         example_labels = _example_labels(lang)
@@ -841,7 +841,7 @@ def _render_custom_simulator(
         metric_columns = st.columns(3)
         metric_columns[0].metric(
             tr("simulation.final_value", lang),
-            _money(primary_metrics["final_value"], lang),
+            format_money(primary_metrics["final_value"], currency),
         )
         metric_columns[1].metric(
             tr("simulation.total_return", lang),
@@ -854,14 +854,14 @@ def _render_custom_simulator(
         if not examples_available:
             st.warning(tr("simulation.reference_unavailable", lang))
         st.dataframe(
-            _comparison_summary_frame(curves, lang),
+            _comparison_summary_frame(curves, lang, currency),
             width="stretch",
             hide_index=True,
             row_height=DATAFRAME_ROW_HEIGHT,
         )
 
     with growth_tab:
-        st.plotly_chart(_value_chart(curves, lang), width="stretch")
+        st.plotly_chart(_value_chart(curves, lang, currency), width="stretch")
 
     with drawdown_tab:
         st.caption(tr("strategy.drawdown_caption", lang))
@@ -892,9 +892,18 @@ def _render_custom_simulator(
 lang = current_language()
 st.title(tr("strategy.title", lang))
 st.caption(tr("strategy.subtitle", lang))
+base_currency = st.segmented_control(
+    tr("currency.base_label", lang),
+    options=list(SUPPORTED_BASE_CURRENCIES),
+    default="USD",
+    key=BASE_CURRENCY_STATE_KEY,
+    help=tr("currency.strategy_help", lang),
+)
+if base_currency not in SUPPORTED_BASE_CURRENCIES:
+    base_currency = "USD"
 
 try:
-    returns_df = load_mart_returns()
+    base_returns_df = load_mart_returns()
 except Exception as exc:
     st.error(tr("strategy.data_error", lang))
     with st.expander(tr("home.admin_details", lang)):
@@ -903,6 +912,7 @@ except Exception as exc:
 
 demo_mode_banner(lang)
 custom_prices = session_prices(st.session_state)
+returns_df = base_returns_df
 returns_df, _ = merge_custom_data(returns_df, None, custom_prices)
 custom_symbols = session_tickers(st.session_state)
 if custom_symbols:
@@ -911,9 +921,54 @@ if custom_symbols:
             "custom.strategy_notice",
             lang,
             tickers=", ".join(custom_symbols),
+            currency=base_currency,
         )
     )
-all_prices = returns_df.pivot(
+listing_currencies = {
+    ticker: "USD" for ticker in base_returns_df["ticker"].dropna().astype(str).unique()
+}
+listing_currencies.update(
+    {
+        candidate.symbol: candidate.currency
+        for candidate in session_instrument_candidates(st.session_state)
+        if candidate.currency
+    }
+)
+unknown_currencies = sorted(
+    set(returns_df["ticker"].dropna().astype(str)) - set(listing_currencies)
+)
+if unknown_currencies:
+    st.warning(
+        tr(
+            "currency.missing_metadata",
+            lang,
+            tickers=", ".join(unknown_currencies),
+        )
+    )
+    returns_df = returns_df[~returns_df["ticker"].isin(unknown_currencies)]
+
+try:
+    required_currencies = tuple(
+        sorted(set(listing_currencies.values()) | {base_currency})
+    )
+    usd_rates = cached_usd_exchange_rates(required_currencies)
+    converted_returns = convert_prices_to_base_currency(
+        returns_df,
+        listing_currencies,
+        base_currency,
+        usd_rates,
+    )
+except CurrencyConversionError as exc:
+    st.error(
+        tr(
+            "currency.conversion_error",
+            lang,
+            detail=str(exc),
+        )
+    )
+    st.stop()
+
+all_prices = converted_returns.pivot(
     index="price_date", columns="ticker", values="adj_close"
 ).sort_index()
 
@@ -921,4 +976,4 @@ try:
     dimension = load_dim_etf()
 except Exception:
     dimension = pd.DataFrame()
-_render_custom_simulator(all_prices, dimension, lang)
+_render_custom_simulator(all_prices, dimension, lang, base_currency)

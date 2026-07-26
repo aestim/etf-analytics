@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 CUSTOM_ETF_STATE_KEY = "custom_etf_prices"
+CUSTOM_ETF_METADATA_STATE_KEY = "custom_etf_metadata"
 MAX_CUSTOM_ETFS = 5
 MIN_PRICE_ROWS = 30
 MAX_SEARCH_RESULTS = 8
@@ -85,6 +86,7 @@ class InstrumentCandidate:
     exchange: str
     provider_type: str
     average_daily_volume: float | None = None
+    currency: str = ""
 
 
 class CustomEtfError(ValueError):
@@ -288,6 +290,7 @@ def normalize_search_results(
                 quote.get("quoteType"),
                 quote.get("typeDisp"),
             ),
+            currency=_first_text(quote.get("currency")),
         )
         ranked_candidates.append((candidate, bool(long_name), provider_position))
 
@@ -792,11 +795,43 @@ def session_tickers(state: MutableMapping[str, Any]) -> list[str]:
     return sorted(prices["ticker"].dropna().astype(str).unique())
 
 
+def session_instrument_candidates(
+    state: MutableMapping[str, Any],
+) -> tuple[InstrumentCandidate, ...]:
+    """Return stored search metadata, with safe fallbacks for older sessions."""
+
+    metadata = state.get(CUSTOM_ETF_METADATA_STATE_KEY)
+    raw_metadata = metadata if isinstance(metadata, dict) else {}
+    candidates = []
+    for ticker in session_tickers(state):
+        raw = raw_metadata.get(ticker)
+        if not isinstance(raw, dict):
+            raw = {}
+        raw_volume = raw.get("average_daily_volume")
+        try:
+            average_volume = float(raw_volume) if raw_volume is not None else None
+        except (TypeError, ValueError):
+            average_volume = None
+        candidates.append(
+            InstrumentCandidate(
+                symbol=ticker,
+                display_name=_first_text(raw.get("display_name"), ticker),
+                exchange=_first_text(raw.get("exchange")),
+                provider_type=_first_text(raw.get("provider_type")),
+                average_daily_volume=average_volume,
+                currency=_first_text(raw.get("currency")),
+            )
+        )
+    return tuple(candidates)
+
+
 def add_session_prices(
     state: MutableMapping[str, Any],
     prices: pd.DataFrame,
+    *,
+    candidate: InstrumentCandidate | None = None,
 ) -> None:
-    """Add one normalized symbol to session state with duplicate/limit guards."""
+    """Add one symbol and optional search metadata to session state."""
 
     if prices.empty or prices["ticker"].nunique() != 1:
         raise PriceDataUnavailableError("")
@@ -813,6 +848,17 @@ def add_session_prices(
         .sort_values(["ticker", "price_date"])
         .reset_index(drop=True)
     )
+    if candidate is not None and normalize_ticker(candidate.symbol) == ticker:
+        current_metadata = state.get(CUSTOM_ETF_METADATA_STATE_KEY)
+        metadata = dict(current_metadata) if isinstance(current_metadata, dict) else {}
+        metadata[ticker] = {
+            "display_name": candidate.display_name,
+            "exchange": candidate.exchange,
+            "provider_type": candidate.provider_type,
+            "average_daily_volume": candidate.average_daily_volume,
+            "currency": candidate.currency,
+        }
+        state[CUSTOM_ETF_METADATA_STATE_KEY] = metadata
 
 
 def remove_session_ticker(
@@ -824,12 +870,18 @@ def remove_session_ticker(
     existing = session_prices(state)
     remaining = existing[existing["ticker"] != ticker].reset_index(drop=True)
     state[CUSTOM_ETF_STATE_KEY] = remaining
+    current_metadata = state.get(CUSTOM_ETF_METADATA_STATE_KEY)
+    if isinstance(current_metadata, dict):
+        metadata = dict(current_metadata)
+        metadata.pop(ticker, None)
+        state[CUSTOM_ETF_METADATA_STATE_KEY] = metadata
 
 
 def clear_session_prices(state: MutableMapping[str, Any]) -> None:
     """Remove all custom symbols from session state."""
 
     state[CUSTOM_ETF_STATE_KEY] = empty_price_frame()
+    state[CUSTOM_ETF_METADATA_STATE_KEY] = {}
 
 
 def _merge_frames(
