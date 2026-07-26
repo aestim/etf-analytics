@@ -22,10 +22,8 @@ from custom_etf import merge_custom_data, session_prices, session_tickers  # noq
 from db import (  # noqa: E402
     DATAFRAME_ROW_HEIGHT,
     PLOTLY_LAYOUT,
-    dataframe_width,
     demo_mode_banner,
     glossary_expander,
-    glossary_help,
     load_dim_etf,
     load_mart_returns,
 )
@@ -34,6 +32,11 @@ from i18n import current_language, tr  # noqa: E402
 REQUIRED_EXAMPLES = {"SPY", "QQQ", "BND", "TQQQ"}
 DEFAULT_TICKERS = ["SPY", "BND", "GLD"]
 DEFAULT_WEIGHTS = {"SPY": 60.0, "BND": 30.0, "GLD": 10.0}
+PRIMARY_PLAN_STATE_KEY = "strategy_primary_plan_v2"
+SECONDARY_PLAN_STATE_KEY = "strategy_secondary_plan_v2"
+TOTAL_CAPITAL_STATE_KEY = "strategy_total_capital_v2"
+START_DATE_STATE_KEY = "strategy_start_date_v2"
+REFERENCE_SELECTION_STATE_KEY = "strategy_reference_examples_v2"
 
 
 @dataclass(frozen=True)
@@ -119,100 +122,31 @@ def _value_chart(curves: dict[str, pd.Series], lang: str):
     return fig
 
 
-def _comparison_summary(
-    labels: list[str],
-    metrics: dict[str, dict[str, float]],
-    lang: str,
-) -> None:
-    first, second = labels
-    first_final = metrics[first]["final_value"]
-    second_final = metrics[second]["final_value"]
-    difference = abs(first_final - second_final)
-    if np.isclose(first_final, second_final, rtol=1e-4):
-        st.info(tr("simulation.summary_equal", lang))
-    else:
-        higher, lower = (
-            (first, second) if first_final > second_final else (second, first)
-        )
-        st.info(
-            tr(
-                "simulation.summary_higher",
-                lang,
-                higher=higher,
-                lower=lower,
-                amount=_money(difference, lang),
-            )
-        )
-
-    smaller_drop = min(
-        labels,
-        key=lambda name: abs(metrics[name]["max_drawdown"]),
+def _drawdown_chart(curves: dict[str, pd.Series], lang: str):
+    frame = pd.DataFrame(curves)
+    frame = frame.div(frame.cummax()) - 1.0
+    frame.index.name = "price_date"
+    long = frame.reset_index().melt(
+        id_vars="price_date",
+        var_name="strategy",
+        value_name="drawdown",
     )
-    st.caption(
-        tr(
-            "simulation.summary_drop",
-            lang,
-            name=smaller_drop,
-            drawdown=_percent(metrics[smaller_drop]["max_drawdown"]),
-        )
+    fig = px.line(
+        long,
+        x="price_date",
+        y="drawdown",
+        color="strategy",
+        line_dash="strategy",
+        labels={
+            "price_date": tr("strategy.date", lang),
+            "drawdown": tr("home.drawdown", lang),
+            "strategy": tr("strategy.rule", lang),
+        },
     )
-
-
-def _result_table(
-    label: str,
-    metrics: dict[str, dict[str, float]],
-    lang: str,
-) -> pd.DataFrame:
-    rows = [
-        (tr("simulation.final_value", lang), "final_value", _money),
-        (tr("simulation.profit", lang), "profit", _money),
-        (tr("simulation.total_return", lang), "total_return", _percent),
-        (tr("simulation.max_drawdown", lang), "max_drawdown", _percent),
-    ]
-    values = []
-    for _, key, formatter in rows:
-        value = metrics[label][key]
-        values.append(
-            formatter(value, lang) if formatter is _money else formatter(value)
-        )
-    return pd.DataFrame(
-        {
-            tr("simulation.metric", lang): [row[0] for row in rows],
-            tr("simulation.value", lang): values,
-        }
-    )
-
-
-def _render_result_tables(
-    labels: list[str],
-    metrics: dict[str, dict[str, float]],
-    lang: str,
-) -> None:
-    for label in labels:
-        st.markdown(f"**{label}**")
-        table = _result_table(label, metrics, lang)
-        metric_column = tr("simulation.metric", lang)
-        value_column = tr("simulation.value", lang)
-        table_key = (
-            f"simulation_result_{lang}_{label}_"
-            f"{metrics[label]['final_value']:.6f}_"
-            f"{metrics[label]['max_drawdown']:.6f}"
-        )
-        st.dataframe(
-            table,
-            width=dataframe_width(table),
-            row_height=DATAFRAME_ROW_HEIGHT,
-            hide_index=True,
-            key=table_key,
-            column_config={
-                metric_column: st.column_config.TextColumn(
-                    metric_column, width=145, alignment="left"
-                ),
-                value_column: st.column_config.TextColumn(
-                    value_column, width=195, alignment="right"
-                ),
-            },
-        )
+    fig.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
+    fig.update_xaxes(title_text="")
+    fig.update_yaxes(title_text="", tickformat=".0%")
+    return fig
 
 
 def _example_labels(lang: str) -> dict[str, str]:
@@ -232,13 +166,16 @@ def _allocation_inputs(
     defaults: list[str],
     default_weights: dict[str, float],
 ) -> tuple[list[str], dict[str, float]] | None:
-    selected = st.multiselect(
-        tr("simulation.select_etfs", lang),
-        options=options,
-        default=defaults,
-        max_selections=5,
-        key=f"{prefix}_tickers",
-    )
+    ticker_key = f"{prefix}_tickers"
+    multiselect_kwargs = {
+        "label": tr("simulation.select_etfs", lang),
+        "options": options,
+        "max_selections": 5,
+        "key": ticker_key,
+    }
+    if ticker_key not in st.session_state:
+        multiselect_kwargs["default"] = defaults
+    selected = st.multiselect(**multiselect_kwargs)
     if not selected:
         st.info(tr("home.empty_selection", lang))
         return None
@@ -256,9 +193,7 @@ def _allocation_inputs(
         for ticker in selected[:-1]:
             st.session_state[f"{prefix}_weight_{ticker}"] = equal
             assigned += equal
-        st.session_state[f"{prefix}_weight_{selected[-1]}"] = round(
-            100.0 - assigned, 1
-        )
+        st.session_state[f"{prefix}_weight_{selected[-1]}"] = round(100.0 - assigned, 1)
 
     percentages = {
         ticker: st.number_input(
@@ -280,31 +215,36 @@ def _allocation_inputs(
         return None
     st.caption(f"✅ {tr('simulation.weight_valid', lang)}")
     return selected, {
-        ticker: percentage / 100.0
-        for ticker, percentage in percentages.items()
+        ticker: percentage / 100.0 for ticker, percentage in percentages.items()
     }
 
 
 def _plan_inputs(prefix: str, lang: str, ticker_count: int) -> tuple[int, bool]:
-    method = st.segmented_control(
-        tr("simulation.plan_method", lang),
-        options=["lump", "staged"],
-        default="lump",
-        required=True,
-        format_func=lambda value: tr(f"simulation.plan_{value}", lang),
-        key=f"{prefix}_method",
-    )
+    method_key = f"{prefix}_method"
+    method_kwargs = {
+        "label": tr("simulation.plan_method", lang),
+        "options": ["lump", "staged"],
+        "required": True,
+        "format_func": lambda value: tr(f"simulation.plan_{value}", lang),
+        "key": method_key,
+    }
+    if method_key not in st.session_state:
+        method_kwargs["default"] = "lump"
+    method = st.segmented_control(**method_kwargs)
     months = 1
     if method == "staged":
-        months = st.selectbox(
-            tr("simulation.staged_months", lang),
-            options=[6, 12, 24],
-            index=1,
-            format_func=lambda value: tr(
+        months_key = f"{prefix}_months"
+        month_kwargs = {
+            "label": tr("simulation.staged_months", lang),
+            "options": [6, 12, 24],
+            "format_func": lambda value: tr(
                 "simulation.month_option", lang, months=value
             ),
-            key=f"{prefix}_months",
-        )
+            "key": months_key,
+        }
+        if months_key not in st.session_state:
+            month_kwargs["index"] = 1
+        months = st.selectbox(**month_kwargs)
     rebalance_key = f"{prefix}_rebalance"
     rebalance_disabled = ticker_count < 2
     if rebalance_disabled and st.session_state.get(rebalance_key):
@@ -320,7 +260,7 @@ def _plan_inputs(prefix: str, lang: str, ticker_count: int) -> tuple[int, bool]:
     return months, rebalance
 
 
-def _plan_summary(plan: PortfolioPlan, lang: str) -> str:
+def _plan_rule_parts(plan: PortfolioPlan, lang: str) -> tuple[str, str]:
     entry = (
         tr("simulation.plan_lump", lang)
         if plan.deployment_months == 1
@@ -334,6 +274,11 @@ def _plan_summary(plan: PortfolioPlan, lang: str) -> str:
         "simulation.plan_yearly" if plan.rebalance_annually else "simulation.plan_hold",
         lang,
     )
+    return entry, rebalance
+
+
+def _plan_summary(plan: PortfolioPlan, lang: str) -> str:
+    entry, rebalance = _plan_rule_parts(plan, lang)
     return tr(
         "simulation.plan_summary",
         lang,
@@ -341,6 +286,255 @@ def _plan_summary(plan: PortfolioPlan, lang: str) -> str:
         entry=entry,
         rebalance=rebalance,
     )
+
+
+def _plan_state(plan: PortfolioPlan) -> dict[str, object]:
+    return {
+        "name": plan.name,
+        "tickers": list(plan.tickers),
+        "weights": dict(plan.weights),
+        "deployment_months": plan.deployment_months,
+        "rebalance_annually": plan.rebalance_annually,
+    }
+
+
+def _plan_from_state(
+    value: object,
+    options: list[str],
+    *,
+    name_override: str | None = None,
+) -> PortfolioPlan | None:
+    if not isinstance(value, dict):
+        return None
+    raw_tickers = value.get("tickers")
+    raw_weights = value.get("weights")
+    if not isinstance(raw_tickers, list) or not isinstance(raw_weights, dict):
+        return None
+    tickers = tuple(
+        ticker
+        for ticker in raw_tickers
+        if isinstance(ticker, str) and ticker in options
+    )
+    if not tickers or len(tickers) != len(raw_tickers):
+        return None
+    try:
+        weights = {ticker: float(raw_weights[ticker]) for ticker in tickers}
+        deployment_months = int(value.get("deployment_months", 1))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (
+        any(weight <= 0 for weight in weights.values())
+        or not np.isclose(sum(weights.values()), 1.0)
+        or deployment_months not in {1, 6, 12, 24}
+    ):
+        return None
+    name = name_override or str(value.get("name", "")).strip()
+    if not name:
+        return None
+    return PortfolioPlan(
+        name=name,
+        tickers=tickers,
+        weights=weights,
+        deployment_months=deployment_months,
+        rebalance_annually=bool(value.get("rebalance_annually", False)),
+    )
+
+
+def _default_primary_plan(options: list[str], lang: str) -> PortfolioPlan:
+    tickers = tuple(ticker for ticker in DEFAULT_TICKERS if ticker in options)
+    if not tickers:
+        tickers = (options[0],)
+    raw_weights = {
+        ticker: DEFAULT_WEIGHTS.get(ticker, 100.0 / len(tickers)) for ticker in tickers
+    }
+    total = sum(raw_weights.values())
+    weights = {ticker: weight / total for ticker, weight in raw_weights.items()}
+    return PortfolioPlan(
+        name=tr("simulation.my_strategy", lang),
+        tickers=tickers,
+        weights=weights,
+        deployment_months=1,
+        rebalance_annually=False,
+    )
+
+
+def _available_start_date(
+    all_prices: pd.DataFrame,
+    tickers: tuple[str, ...],
+) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp] | None:
+    prices = all_prices[list(tickers)].dropna()
+    if len(prices) < 2:
+        return None
+    latest = prices.index.max()
+    desired = latest - pd.DateOffset(years=5)
+    position = min(prices.index.searchsorted(desired), len(prices) - 2)
+    return prices.index.min(), prices.index[-2], prices.index[position]
+
+
+def _prepare_strategy_draft(
+    target: str,
+    plan: PortfolioPlan,
+    *,
+    total_capital: float,
+    requested_start: pd.Timestamp,
+) -> None:
+    prefix = f"strategy_editor_{target}"
+    st.session_state[f"{prefix}_tickers"] = list(plan.tickers)
+    for ticker, weight in plan.weights.items():
+        st.session_state[f"{prefix}_weight_{ticker}"] = weight * 100
+    st.session_state[f"{prefix}_method"] = (
+        "lump" if plan.deployment_months == 1 else "staged"
+    )
+    st.session_state[f"{prefix}_months"] = max(plan.deployment_months, 6)
+    st.session_state[f"{prefix}_rebalance"] = plan.rebalance_annually
+    st.session_state[f"{prefix}_name"] = plan.name
+    st.session_state[f"{prefix}_total"] = float(total_capital)
+    st.session_state[f"{prefix}_start"] = requested_start.date()
+
+
+def _strategy_editor_dialog(
+    target: str,
+    current_plan: PortfolioPlan,
+    all_prices: pd.DataFrame,
+    options: list[str],
+    total_capital: float,
+    requested_start: pd.Timestamp,
+    lang: str,
+) -> None:
+    title_key = (
+        "simulation.editor_primary_title"
+        if target == "primary"
+        else "simulation.editor_second_title"
+    )
+
+    @st.dialog(tr(title_key, lang), width="large")
+    def render_editor() -> None:
+        prefix = f"strategy_editor_{target}"
+        st.caption(tr("simulation.editor_caption", lang))
+        strategy_name = current_plan.name
+        if target == "secondary":
+            strategy_name = st.text_input(
+                tr("simulation.second_name", lang),
+                max_chars=30,
+                key=f"{prefix}_name",
+            ).strip() or tr("simulation.second_default", lang)
+
+        allocation = _allocation_inputs(
+            options,
+            lang,
+            prefix,
+            list(current_plan.tickers),
+            {ticker: weight * 100 for ticker, weight in current_plan.weights.items()},
+        )
+
+        editor_total = total_capital
+        editor_start = requested_start
+        date_range = None
+        if allocation is not None:
+            selected_tickers, _ = allocation
+            date_range = _available_start_date(
+                all_prices,
+                tuple(selected_tickers),
+            )
+
+        if target == "primary":
+            unit = "만원" if lang == "ko" else "USD"
+            amount_step = 100.0 if lang == "ko" else 1_000.0
+            editor_total = st.number_input(
+                tr("simulation.total_amount", lang, unit=unit),
+                min_value=amount_step,
+                step=amount_step,
+                help=tr("simulation.amount_help", lang),
+                key=f"{prefix}_total",
+            )
+            if date_range is not None:
+                minimum, maximum, fallback = date_range
+                start_key = f"{prefix}_start"
+                candidate = pd.Timestamp(
+                    st.session_state.get(start_key, fallback.date())
+                )
+                clamped = min(max(candidate, minimum), maximum)
+                st.session_state[start_key] = clamped.date()
+                editor_start = pd.Timestamp(
+                    st.date_input(
+                        tr("simulation.start_date", lang),
+                        min_value=minimum.date(),
+                        max_value=maximum.date(),
+                        key=start_key,
+                    )
+                )
+
+        ticker_count = len(allocation[0]) if allocation is not None else 0
+        months, rebalance = _plan_inputs(prefix, lang, ticker_count)
+        can_apply = allocation is not None and date_range is not None
+        if target == "secondary":
+            can_apply = allocation is not None
+            if strategy_name == tr("simulation.my_strategy", lang):
+                st.warning(tr("simulation.second_name_duplicate", lang))
+                can_apply = False
+
+        if st.button(
+            tr("simulation.apply", lang),
+            type="primary",
+            width="stretch",
+            disabled=not can_apply,
+            key=f"{prefix}_apply",
+        ):
+            selected_tickers, weights = allocation
+            plan = PortfolioPlan(
+                name=(
+                    tr("simulation.my_strategy", lang)
+                    if target == "primary"
+                    else strategy_name
+                ),
+                tickers=tuple(selected_tickers),
+                weights=weights,
+                deployment_months=months,
+                rebalance_annually=rebalance,
+            )
+            state_key = (
+                PRIMARY_PLAN_STATE_KEY
+                if target == "primary"
+                else SECONDARY_PLAN_STATE_KEY
+            )
+            st.session_state[state_key] = _plan_state(plan)
+            if target == "primary":
+                st.session_state[f"{TOTAL_CAPITAL_STATE_KEY}_{lang}"] = float(
+                    editor_total
+                )
+                st.session_state[START_DATE_STATE_KEY] = editor_start.date()
+            st.rerun()
+
+    render_editor()
+
+
+def _allocation_summary(plan: PortfolioPlan) -> str:
+    return " · ".join(
+        f"{ticker} {weight:.0%}" for ticker, weight in plan.weights.items()
+    )
+
+
+def _comparison_summary_frame(
+    curves: dict[str, pd.Series],
+    lang: str,
+) -> pd.DataFrame:
+    rows = []
+    for name, curve in curves.items():
+        metrics = _curve_metrics(curve)
+        rows.append(
+            {
+                tr("strategy.rule", lang): name,
+                tr("simulation.final_value", lang): _compact_money(
+                    metrics["final_value"], lang
+                ),
+                tr("simulation.total_return", lang): _percent(metrics["total_return"]),
+                tr("simulation.max_drawdown", lang): _percent(metrics["max_drawdown"]),
+                tr("simulation.annualized_vol", lang): _percent(
+                    metrics["annualized_vol"]
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def _reference_curves(
@@ -380,99 +574,12 @@ def _reference_curves(
             ).value,
             "balanced": total_capital
             * strat.rebalance(common, {"SPY": 0.6, "BND": 0.4}, every=63),
-            "trend": total_capital
-            * strat.sma_trend(common["QQQ"], window=200),
+            "trend": total_capital * strat.sma_trend(common["QQQ"], window=200),
             "split": total_capital
             * strat.infinite_buy(common["TQQQ"], n_splits=40, take_profit=0.10),
         }
     )
     return curves, common.index
-
-
-def _render_reference_comparison(
-    all_prices: pd.DataFrame,
-    plans: list[PortfolioPlan],
-    total_capital: float,
-    start: pd.Timestamp,
-    end: pd.Timestamp,
-    lang: str,
-) -> None:
-    st.subheader(tr("simulation.reference_title", lang))
-    st.caption(tr("simulation.reference_caption", lang))
-    try:
-        built = _reference_curves(
-            all_prices, plans, total_capital, start, end
-        )
-    except ValueError:
-        built = None
-    if built is None:
-        st.warning(tr("simulation.reference_unavailable", lang))
-        return
-
-    curves, index = built
-    labels = {
-        **{f"custom_{i}": plan.name for i, plan in enumerate(plans)},
-        **_example_labels(lang),
-    }
-    rule_column = tr("strategy.rule", lang)
-    final_value_column = tr("simulation.final_value", lang)
-    drawdown_column = tr("simulation.drop_short", lang)
-    rows = []
-    for key, curve in curves.items():
-        metrics = _curve_metrics(curve)
-        rows.append(
-            {
-                rule_column: labels[key],
-                final_value_column: _compact_money(metrics["final_value"], lang),
-                drawdown_column: _percent(metrics["max_drawdown"]),
-            }
-        )
-    reference_table = pd.DataFrame(rows)
-    st.caption(
-        tr(
-            "simulation.actual_period",
-            lang,
-            start=f"{index.min():%Y-%m-%d}",
-            end=f"{index.max():%Y-%m-%d}",
-        )
-    )
-    st.dataframe(
-        reference_table,
-        width=dataframe_width(reference_table),
-        row_height=DATAFRAME_ROW_HEIGHT,
-        hide_index=True,
-        key=(
-            f"simulation_reference_table_{lang}_{total_capital:g}_"
-            f"{start:%Y%m%d}_{end:%Y%m%d}_{len(plans)}"
-        ),
-        column_config={
-            rule_column: st.column_config.TextColumn(
-                rule_column, width=170, alignment="left"
-            ),
-            final_value_column: st.column_config.TextColumn(
-                final_value_column, width=100, alignment="right"
-            ),
-            drawdown_column: st.column_config.TextColumn(
-                drawdown_column, width=85, alignment="right"
-            ),
-        },
-    )
-
-    example_labels = _example_labels(lang)
-    selected_examples = st.multiselect(
-        tr("simulation.reference_select", lang),
-        options=list(example_labels),
-        default=["buy_hold"],
-        max_selections=3,
-        format_func=lambda key: labels[key],
-        key=f"simulation_reference_examples_{lang}",
-    )
-    chart_curves = {
-        plan.name: curves[f"custom_{index}"]
-        for index, plan in enumerate(plans)
-    }
-    chart_curves.update({labels[key]: curves[key] for key in selected_examples})
-    st.plotly_chart(_value_chart(chart_curves, lang), width="stretch")
 
 
 def _render_leverage_warning(
@@ -504,116 +611,162 @@ def _render_custom_simulator(
     dim_etf: pd.DataFrame,
     lang: str,
 ) -> None:
-    st.markdown(tr("simulation.intro", lang))
     options = sorted(all_prices.columns)
-    defaults = [ticker for ticker in DEFAULT_TICKERS if ticker in options]
-
-    st.subheader(tr("simulation.primary_title", lang))
-    primary_allocation = _allocation_inputs(
-        options, lang, "simulation", defaults, DEFAULT_WEIGHTS
-    )
-    if primary_allocation is None:
-        return
-    primary_tickers, primary_weights = primary_allocation
-
-    unit = "만원" if lang == "ko" else "USD"
-    amount_default = 1_000.0 if lang == "ko" else 10_000.0
-    amount_step = 100.0 if lang == "ko" else 1_000.0
-    total_capital = st.number_input(
-        tr("simulation.total_amount", lang, unit=unit),
-        min_value=amount_step,
-        value=amount_default,
-        step=amount_step,
-        help=tr("simulation.amount_help", lang),
-        key=f"simulation_total_{lang}",
-    )
-
-    primary_prices = all_prices[primary_tickers].dropna()
-    if len(primary_prices) < 2:
+    if not options:
         st.warning(tr("simulation.insufficient_history", lang))
         return
-    latest = primary_prices.index.max()
-    desired = latest - pd.DateOffset(years=5)
-    default_pos = min(
-        primary_prices.index.searchsorted(desired), len(primary_prices) - 2
-    )
-    requested_start = st.date_input(
-        tr("simulation.start_date", lang),
-        value=primary_prices.index[default_pos].date(),
-        min_value=primary_prices.index.min().date(),
-        max_value=primary_prices.index[-2].date(),
-        key=f"simulation_start_{'_'.join(primary_tickers)}",
-    )
 
-    st.markdown(f"#### {tr('simulation.plan_title', lang)}")
-    primary_months, primary_rebalance = _plan_inputs(
-        "simulation", lang, len(primary_tickers)
+    default_plan = _default_primary_plan(options, lang)
+    primary_plan = _plan_from_state(
+        st.session_state.get(PRIMARY_PLAN_STATE_KEY),
+        options,
+        name_override=tr("simulation.my_strategy", lang),
     )
-    plans = [
-        PortfolioPlan(
-            name=tr("simulation.my_strategy", lang),
-            tickers=tuple(primary_tickers),
-            weights=primary_weights,
-            deployment_months=primary_months,
-            rebalance_annually=primary_rebalance,
+    if primary_plan is None:
+        primary_plan = default_plan
+        st.session_state[PRIMARY_PLAN_STATE_KEY] = _plan_state(primary_plan)
+
+    capital_key = f"{TOTAL_CAPITAL_STATE_KEY}_{lang}"
+    amount_default = 1_000.0 if lang == "ko" else 10_000.0
+    total_capital = float(st.session_state.get(capital_key, amount_default))
+    start_range = _available_start_date(all_prices, primary_plan.tickers)
+    if start_range is None:
+        st.warning(tr("simulation.insufficient_history", lang))
+        return
+    minimum_start, maximum_start, default_start = start_range
+    requested_start = pd.Timestamp(
+        st.session_state.get(START_DATE_STATE_KEY, default_start.date())
+    )
+    requested_start = min(
+        max(requested_start, minimum_start),
+        maximum_start,
+    )
+    st.session_state[START_DATE_STATE_KEY] = requested_start.date()
+
+    secondary_plan = _plan_from_state(
+        st.session_state.get(SECONDARY_PLAN_STATE_KEY),
+        options,
+    )
+    plans = [primary_plan]
+    if secondary_plan is not None:
+        plans.append(secondary_plan)
+
+    st.subheader(tr("simulation.reference_title", lang))
+    st.caption(tr("simulation.workspace_caption", lang))
+    with st.container(border=True):
+        primary_text, primary_action = st.columns(
+            [5, 1],
+            vertical_alignment="center",
         )
-    ]
-
-    if not st.session_state.get("simulation_second_enabled", False):
-        if st.button(
-            tr("simulation.add_second", lang), key="simulation_add_second"
+        primary_text.markdown(f"**{primary_plan.name}**")
+        primary_text.caption(_allocation_summary(primary_plan))
+        primary_text.caption(
+            f"{_money(total_capital, lang)} · "
+            f"{requested_start:%Y-%m-%d} · "
+            f"{' · '.join(_plan_rule_parts(primary_plan, lang))}"
+        )
+        if primary_action.button(
+            tr("simulation.edit", lang),
+            key="strategy_edit_primary",
+            width="stretch",
         ):
-            st.session_state["simulation_second_enabled"] = True
-            st.rerun()
-    else:
-        st.divider()
-        st.subheader(tr("simulation.second_title", lang))
-        st.caption(tr("simulation.second_caption", lang))
-        second_name = st.text_input(
-            tr("simulation.second_name", lang),
-            value=tr("simulation.second_default", lang),
-            max_chars=30,
-            key="simulation_second_name",
-        ).strip() or tr("simulation.second_default", lang)
-        if second_name == plans[0].name:
-            st.warning(tr("simulation.second_name_duplicate", lang))
-            return
-        second_allocation = _allocation_inputs(
-            options,
-            lang,
-            "simulation_second",
-            primary_tickers,
-            {ticker: weight * 100 for ticker, weight in primary_weights.items()},
-        )
-        if second_allocation is None:
-            return
-        second_tickers, second_weights = second_allocation
-        second_months, second_rebalance = _plan_inputs(
-            "simulation_second", lang, len(second_tickers)
-        )
-        plans.append(
-            PortfolioPlan(
-                name=second_name,
-                tickers=tuple(second_tickers),
-                weights=second_weights,
-                deployment_months=second_months,
-                rebalance_annually=second_rebalance,
+            _prepare_strategy_draft(
+                "primary",
+                primary_plan,
+                total_capital=total_capital,
+                requested_start=requested_start,
             )
-        )
-        if st.button(
-            tr("simulation.remove_second", lang),
-            key="simulation_remove_second",
+            _strategy_editor_dialog(
+                "primary",
+                primary_plan,
+                all_prices,
+                options,
+                total_capital,
+                requested_start,
+                lang,
+            )
+
+        if secondary_plan is not None:
+            st.divider()
+            secondary_text, secondary_actions = st.columns(
+                [5, 1],
+                vertical_alignment="center",
+            )
+            secondary_text.markdown(f"**{secondary_plan.name}**")
+            secondary_text.caption(_allocation_summary(secondary_plan))
+            secondary_text.caption(
+                " · ".join(_plan_rule_parts(secondary_plan, lang))
+            )
+            if secondary_actions.button(
+                tr("simulation.edit", lang),
+                key="strategy_edit_secondary",
+                width="stretch",
+            ):
+                _prepare_strategy_draft(
+                    "secondary",
+                    secondary_plan,
+                    total_capital=total_capital,
+                    requested_start=requested_start,
+                )
+                _strategy_editor_dialog(
+                    "secondary",
+                    secondary_plan,
+                    all_prices,
+                    options,
+                    total_capital,
+                    requested_start,
+                    lang,
+                )
+            if secondary_actions.button(
+                tr("simulation.remove_second", lang),
+                key="strategy_remove_secondary",
+                width="stretch",
+            ):
+                st.session_state.pop(SECONDARY_PLAN_STATE_KEY, None)
+                st.rerun()
+        elif st.button(
+            tr("simulation.add_second", lang),
+            key="strategy_add_secondary",
+            width="stretch",
         ):
-            st.session_state["simulation_second_enabled"] = False
-            st.rerun()
+            new_plan = PortfolioPlan(
+                name=tr("simulation.second_default", lang),
+                tickers=primary_plan.tickers,
+                weights=primary_plan.weights,
+                deployment_months=primary_plan.deployment_months,
+                rebalance_annually=primary_plan.rebalance_annually,
+            )
+            _prepare_strategy_draft(
+                "secondary",
+                new_plan,
+                total_capital=total_capital,
+                requested_start=requested_start,
+            )
+            _strategy_editor_dialog(
+                "secondary",
+                new_plan,
+                all_prices,
+                options,
+                total_capital,
+                requested_start,
+                lang,
+            )
+
+        example_labels = _example_labels(lang)
+        st.multiselect(
+            tr("simulation.reference_select", lang),
+            options=list(example_labels),
+            default=["buy_hold"],
+            max_selections=3,
+            format_func=lambda key: example_labels[key],
+            key=REFERENCE_SELECTION_STATE_KEY,
+        )
 
     _render_leverage_warning(plans, dim_etf, lang)
-    combined_tickers = sorted(
-        {ticker for plan in plans for ticker in plan.tickers}
+    combined_tickers = sorted({ticker for plan in plans for ticker in plan.tickers})
+    simulation_prices = (
+        all_prices[combined_tickers].dropna().loc[pd.Timestamp(requested_start) :]
     )
-    simulation_prices = all_prices[combined_tickers].dropna().loc[
-        pd.Timestamp(requested_start) :
-    ]
     try:
         results = {
             plan.name: sim.portfolio_strategy(
@@ -629,15 +782,44 @@ def _render_custom_simulator(
         st.warning(tr("simulation.insufficient_history", lang))
         return
 
-    labels = list(results)
-    metrics = {
-        name: sim.result_metrics(result) for name, result in results.items()
-    }
     start = next(iter(results.values())).value.index.min()
     end = next(iter(results.values())).value.index.max()
+    selected_examples = st.session_state.get(
+        REFERENCE_SELECTION_STATE_KEY,
+        ["buy_hold"],
+    )
+    curves = {name: result.value for name, result in results.items()}
+    examples_available = True
+    if selected_examples:
+        try:
+            built = _reference_curves(
+                all_prices,
+                plans,
+                total_capital,
+                start,
+                end,
+            )
+        except ValueError:
+            built = None
+        if built is None:
+            examples_available = False
+        else:
+            reference_curves, _ = built
+            curves = {
+                plan.name: reference_curves[f"custom_{index}"]
+                for index, plan in enumerate(plans)
+            }
+            labels = _example_labels(lang)
+            curves.update(
+                {
+                    labels[key]: reference_curves[key]
+                    for key in selected_examples
+                    if key in labels
+                }
+            )
 
     st.subheader(tr("simulation.results", lang))
-    st.markdown(
+    st.caption(
         tr(
             "simulation.actual_period",
             lang,
@@ -645,154 +827,66 @@ def _render_custom_simulator(
             end=f"{end:%Y-%m-%d}",
         )
     )
-    for plan in plans:
-        st.caption(_plan_summary(plan, lang))
-    if len(labels) == 2:
-        _comparison_summary(labels, metrics, lang)
-    _render_result_tables(labels, metrics, lang)
-
-    _render_reference_comparison(
-        all_prices, plans, total_capital, start, end, lang
+    overview_tab, growth_tab, drawdown_tab, details_tab = st.tabs(
+        [
+            tr("strategy.tab_overview", lang),
+            tr("strategy.tab_growth", lang),
+            tr("strategy.tab_drawdown", lang),
+            tr("strategy.tab_details", lang),
+        ]
     )
 
-    with st.expander(tr("simulation.assumptions_title", lang)):
-        st.markdown(tr("simulation.assumptions_body", lang))
+    primary_metrics = _curve_metrics(curves[primary_plan.name])
+    with overview_tab:
+        metric_columns = st.columns(3)
+        metric_columns[0].metric(
+            tr("simulation.final_value", lang),
+            _money(primary_metrics["final_value"], lang),
+        )
+        metric_columns[1].metric(
+            tr("simulation.total_return", lang),
+            _percent(primary_metrics["total_return"]),
+        )
+        metric_columns[2].metric(
+            tr("simulation.max_drawdown", lang),
+            _percent(primary_metrics["max_drawdown"]),
+        )
+        if not examples_available:
+            st.warning(tr("simulation.reference_unavailable", lang))
+        st.dataframe(
+            _comparison_summary_frame(curves, lang),
+            width="stretch",
+            hide_index=True,
+            row_height=DATAFRAME_ROW_HEIGHT,
+        )
 
+    with growth_tab:
+        st.plotly_chart(_value_chart(curves, lang), width="stretch")
 
-def _render_example_strategies(prices: pd.DataFrame, lang: str) -> None:
-    with st.expander(tr("strategy.guide_title", lang), expanded=True):
-        st.markdown(tr("strategy.guide_body", lang))
+    with drawdown_tab:
+        st.caption(tr("strategy.drawdown_caption", lang))
+        st.plotly_chart(_drawdown_chart(curves, lang), width="stretch")
 
-    missing = REQUIRED_EXAMPLES - set(prices.columns)
-    if missing:
-        st.warning(tr("strategy.missing", lang, tickers=", ".join(sorted(missing))))
-        return
-    common = prices[sorted(REQUIRED_EXAMPLES)].dropna()
-
-    notes = {
-        tr("strategy.buy_hold_name", lang): tr("strategy.buy_hold_note", lang),
-        tr("strategy.dca_name", lang): tr("strategy.dca_note", lang),
-        tr("strategy.balanced_name", lang): tr("strategy.balanced_note", lang),
-        tr("strategy.trend_name", lang): tr("strategy.trend_note", lang),
-        tr("strategy.split_name", lang): tr("strategy.split_note", lang),
-    }
-    equity_curves = {
-        tr("strategy.buy_hold_name", lang): strat.lump_sum(common["SPY"]),
-        tr("strategy.dca_name", lang): strat.dca(common["QQQ"], every=21),
-        tr("strategy.balanced_name", lang): strat.rebalance(
-            common, {"SPY": 0.6, "BND": 0.4}, every=63
-        ),
-        tr("strategy.trend_name", lang): strat.sma_trend(
-            common["QQQ"], window=200
-        ),
-        tr("strategy.split_name", lang): strat.infinite_buy(
-            common["TQQQ"], n_splits=40, take_profit=0.10
-        ),
-    }
-    curves = pd.DataFrame(equity_curves)
-    curves.index.name = "price_date"
-    chart_labels = {
-        tr("strategy.buy_hold_name", lang): tr("strategy.buy_hold_short", lang),
-        tr("strategy.dca_name", lang): tr("strategy.dca_short", lang),
-        tr("strategy.balanced_name", lang): tr("strategy.balanced_short", lang),
-        tr("strategy.trend_name", lang): tr("strategy.trend_short", lang),
-        tr("strategy.split_name", lang): tr("strategy.split_short", lang),
-    }
-    chart_curves = curves.rename(columns=chart_labels)
-
-    log_scale = st.checkbox(
-        tr("strategy.log_scale", lang),
-        value=True,
-        help=tr("strategy.log_help", lang),
-    )
-    st.subheader(tr("strategy.growth_title", lang))
-    st.caption(f"{curves.index.min():%Y-%m-%d} → {curves.index.max():%Y-%m-%d}")
-    fig = px.line(
-        chart_curves.reset_index().melt(
-            id_vars="price_date", var_name="strategy", value_name="equity"
-        ),
-        x="price_date",
-        y="equity",
-        color="strategy",
-        line_dash="strategy",
-        log_y=log_scale,
-        labels={
-            "price_date": tr("strategy.date", lang),
-            "equity": tr("strategy.capital", lang),
-            "strategy": tr("strategy.rule", lang),
-        },
-    )
-    fig.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
-    fig.update_xaxes(title_text="")
-    st.plotly_chart(fig, width="stretch")
-
-    st.subheader(tr("strategy.drawdown_title", lang))
-    st.caption(tr("strategy.drawdown_caption", lang))
-    drawdown = chart_curves.div(chart_curves.cummax()) - 1.0
-    fig_dd = px.line(
-        drawdown.reset_index().melt(
-            id_vars="price_date", var_name="strategy", value_name="drawdown"
-        ),
-        x="price_date",
-        y="drawdown",
-        color="strategy",
-        line_dash="strategy",
-        labels={
-            "price_date": tr("strategy.date", lang),
-            "drawdown": tr("home.drawdown", lang),
-            "strategy": tr("strategy.rule", lang),
-        },
-    )
-    fig_dd.update_layout(**PLOTLY_LAYOUT, title_text="", legend_title_text="")
-    fig_dd.update_xaxes(title_text="")
-    fig_dd.update_yaxes(tickformat=".0%")
-    st.plotly_chart(fig_dd, width="stretch")
-
-    st.subheader(tr("strategy.metrics", lang))
-    metrics = pd.DataFrame(
-        {name: strat.summary_metrics(eq) for name, eq in equity_curves.items()}
-    ).T.rename(
-        columns={
-            "cagr": "CAGR",
-            "ann_vol": "Ann. vol",
-            "max_drawdown": "Max drawdown",
-            "sharpe": "Sharpe (rf=0)",
-        }
-    )
-    display = metrics.copy()
-    for column in ("CAGR", "Ann. vol", "Max drawdown"):
-        display[column] = display[column].map("{:.2%}".format)
-    display["Sharpe (rf=0)"] = display["Sharpe (rf=0)"].map("{:.2f}".format)
-    metric_labels = {
-        "CAGR": tr("strategy.cagr", lang),
-        "Ann. vol": tr("strategy.ann_vol", lang),
-        "Max drawdown": tr("strategy.max_drawdown", lang),
-        "Sharpe (rf=0)": tr("strategy.sharpe", lang),
-    }
-    display = display.rename(columns=metric_labels)
-    st.dataframe(
-        display,
-        width=dataframe_width(display),
-        row_height=DATAFRAME_ROW_HEIGHT,
-        column_config={
-            label: st.column_config.TextColumn(
-                label,
-                help=glossary_help(key, lang),
-                alignment="right",
-            )
-            for key, label in metric_labels.items()
-        },
-    )
-
-    with st.expander(tr("strategy.rule_guide", lang)):
-        for name, note in notes.items():
-            st.markdown(f"**{name}**  \n{note}")
-    glossary_expander(
-        ["CAGR", "Ann. vol", "Max drawdown", "Sharpe (rf=0)"],
-        lang,
-        title=tr("strategy.metric_guide", lang),
-    )
-    st.caption(tr("strategy.footer", lang))
+    with details_tab:
+        for plan in plans:
+            st.markdown(_plan_summary(plan, lang))
+        with st.expander(tr("strategy.rule_guide", lang)):
+            notes = {
+                tr("strategy.buy_hold_name", lang): tr("strategy.buy_hold_note", lang),
+                tr("strategy.dca_name", lang): tr("strategy.dca_note", lang),
+                tr("strategy.balanced_name", lang): tr("strategy.balanced_note", lang),
+                tr("strategy.trend_name", lang): tr("strategy.trend_note", lang),
+                tr("strategy.split_name", lang): tr("strategy.split_note", lang),
+            }
+            for name, note in notes.items():
+                st.markdown(f"**{name}**  \n{note}")
+        glossary_expander(
+            ["CAGR", "Ann. vol", "Max drawdown", "Sharpe (rf=0)"],
+            lang,
+            title=tr("strategy.metric_guide", lang),
+        )
+        with st.expander(tr("simulation.assumptions_title", lang)):
+            st.markdown(tr("simulation.assumptions_body", lang))
 
 
 lang = current_language()
@@ -823,22 +917,8 @@ all_prices = returns_df.pivot(
     index="price_date", columns="ticker", values="adj_close"
 ).sort_index()
 
-mode = st.segmented_control(
-    tr("strategy.mode_label", lang),
-    options=["custom", "examples"],
-    default="custom",
-    required=True,
-    format_func=lambda value: tr(f"strategy.mode_{value}", lang),
-    key="strategy_view_mode",
-    persist_state="session",
-    width="stretch",
-)
-
-if mode == "examples":
-    _render_example_strategies(all_prices, lang)
-else:
-    try:
-        dimension = load_dim_etf()
-    except Exception:
-        dimension = pd.DataFrame()
-    _render_custom_simulator(all_prices, dimension, lang)
+try:
+    dimension = load_dim_etf()
+except Exception:
+    dimension = pd.DataFrame()
+_render_custom_simulator(all_prices, dimension, lang)

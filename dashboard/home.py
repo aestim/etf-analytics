@@ -78,7 +78,7 @@ SEARCH_QUERY_KEY = "custom_etf_search_query"
 SEARCH_RESULTS_KEY = "custom_etf_search_results"
 SEARCH_DIRECT_FALLBACK_KEY = "custom_etf_direct_fallback"
 SEARCH_GENERATION_KEY = "custom_etf_search_generation"
-SEARCH_SORT_KEY = "custom_etf_search_sort"
+SEARCH_SORT_KEY = "custom_etf_search_sort_v2"
 SEARCH_FLASH_KEY = "custom_etf_flash"
 HOME_SELECTED_TICKERS_KEY = "home_selected_tickers"
 
@@ -88,7 +88,7 @@ def _store_search_state(
     candidates: tuple[InstrumentCandidate, ...],
     *,
     direct_fallback: bool,
-    sort_mode: str = "relevance",
+    sort_mode: str = "volume",
 ) -> None:
     """Replace the search state for the current query."""
 
@@ -128,9 +128,7 @@ def _candidate_identity_html(
     badge = html.escape(candidate.symbol.partition(".")[0][:4])
     name = html.escape(candidate.display_name)
     symbol = html.escape(candidate.symbol)
-    exchange = html.escape(
-        candidate.exchange or tr("custom.exchange_unknown", lang)
-    )
+    exchange = html.escape(candidate.exchange or tr("custom.exchange_unknown", lang))
     provider_type = html.escape(
         candidate.provider_type or tr("custom.type_unknown", lang)
     )
@@ -177,9 +175,7 @@ def _add_custom_symbol(
                 ticker=normalized_ticker,
             )
             return True
-        with st.spinner(
-            tr("custom.loading", lang, ticker=normalized_ticker)
-        ):
+        with st.spinner(tr("custom.loading", lang, ticker=normalized_ticker)):
             prices = cached_custom_history(normalized_ticker)
         add_session_prices(st.session_state, prices)
         _select_ticker_for_charts(normalized_ticker)
@@ -228,10 +224,10 @@ def custom_etf_dialog(
             )
             sort_mode = st.segmented_control(
                 tr("custom.sort_label", lang),
-                options=["relevance", "volume"],
+                options=["volume", "relevance"],
                 default=st.session_state.get(
                     SEARCH_SORT_KEY,
-                    "relevance",
+                    "volume",
                 ),
                 format_func=lambda value: tr(
                     f"custom.sort_{value}",
@@ -249,9 +245,7 @@ def custom_etf_dialog(
             try:
                 query = normalize_search_query(raw_query)
                 resolved_sort = (
-                    sort_mode
-                    if sort_mode in {"relevance", "volume"}
-                    else "relevance"
+                    sort_mode if sort_mode in {"relevance", "volume"} else "volume"
                 )
                 with st.spinner(tr("custom.searching", lang)):
                     candidates = cached_instrument_search(
@@ -293,7 +287,7 @@ def custom_etf_dialog(
             SEARCH_DIRECT_FALLBACK_KEY,
             False,
         )
-        result_sort = st.session_state.get(SEARCH_SORT_KEY, "relevance")
+        result_sort = st.session_state.get(SEARCH_SORT_KEY, "volume")
         if isinstance(candidates, tuple) and candidates:
             if direct_fallback:
                 st.info(tr("custom.direct_fallback", lang))
@@ -307,8 +301,7 @@ def custom_etf_dialog(
                     )
                 )
             if result_sort == "volume" and not any(
-                candidate.average_daily_volume is not None
-                for candidate in candidates
+                candidate.average_daily_volume is not None for candidate in candidates
             ):
                 st.warning(tr("custom.volume_unavailable_notice", lang))
             else:
@@ -335,10 +328,7 @@ def custom_etf_dialog(
                     if action_col.button(
                         tr("custom.add", lang),
                         type="primary",
-                        key=(
-                            f"add_custom_etf_"
-                            f"{generation}_{candidate.symbol}"
-                        ),
+                        key=(f"add_custom_etf_{generation}_{candidate.symbol}"),
                         width="stretch",
                     ) and _add_custom_symbol(
                         candidate.symbol,
@@ -421,9 +411,7 @@ def render_compare_selector(
     defaults = [ticker for ticker in ("SPY", "BND", "GLD") if ticker in tickers]
     stored_selection = st.session_state.get(HOME_SELECTED_TICKERS_KEY)
     if isinstance(stored_selection, (list, tuple)):
-        valid_selection = [
-            ticker for ticker in stored_selection if ticker in tickers
-        ]
+        valid_selection = [ticker for ticker in stored_selection if ticker in tickers]
     else:
         valid_selection = defaults
     if st.session_state.get(HOME_SELECTED_TICKERS_KEY) != valid_selection:
@@ -458,9 +446,9 @@ def render_ticker_guide(lang: Language) -> None:
             dim = load_dim_etf()
             display_dim = dim.drop(columns=["description"]).copy()
             if lang == "ko":
-                display_dim["asset_class"] = display_dim[
-                    "asset_class"
-                ].replace(ASSET_LABELS_KO)
+                display_dim["asset_class"] = display_dim["asset_class"].replace(
+                    ASSET_LABELS_KO
+                )
                 display_dim["sub_class"] = display_dim["sub_class"].replace(
                     SUBCLASS_LABELS_KO
                 )
@@ -626,9 +614,7 @@ filtered = returns_df[returns_df["ticker"].isin(selected)]
 risk_filtered = risk_df[risk_df["ticker"].isin(selected)]
 comparison = build_indexed_price_comparison(filtered)
 comparison_start = (
-    comparison["price_date"].min().strftime("%Y-%m-%d")
-    if not comparison.empty
-    else ""
+    comparison["price_date"].min().strftime("%Y-%m-%d") if not comparison.empty else ""
 )
 if selected and comparison.empty:
     st.warning(tr("home.no_common_dates", lang))

@@ -43,6 +43,27 @@ SEARCH_TERM_ALIASES = {
     "DISTRIBUTING": "DIST",
     "DISTRIBUTION": "DIST",
 }
+INDEX_QUERY_EXPANSIONS = (
+    (
+        frozenset({"NASDAQ", "100"}),
+        ("NASDAQ 100 UCITS ETF", "Invesco QQQ"),
+        frozenset({"QQQ"}),
+    ),
+)
+INDEX_PROVIDER_TERMS = {
+    "AMUNDI",
+    "AXA",
+    "DWS",
+    "FIRST",
+    "HSBC",
+    "INVESCO",
+    "ISHARES",
+    "JPMORGAN",
+    "UBS",
+    "VANGUARD",
+    "WISDOMTREE",
+    "XTRACKERS",
+}
 
 PRICE_COLUMNS = ["ticker", "price_date", "adj_close", "volume"]
 RETURN_COLUMNS = PRICE_COLUMNS + ["daily_return"]
@@ -112,7 +133,7 @@ def normalize_search_query(value: str) -> str:
 
 
 def search_query_variants(value: str) -> tuple[str, ...]:
-    """Return one exact query and one safe share-class-relaxed fallback."""
+    """Return exact, relaxed and known-index alias searches."""
 
     query = normalize_search_query(value)
     tokens = query.split()
@@ -123,13 +144,21 @@ def search_query_variants(value: str) -> tuple[str, ...]:
     ]
     relaxed_query = " ".join(relaxed_tokens)
     variants = [query]
-    if not relaxed_query or relaxed_query == query:
-        return tuple(variants)
+    if relaxed_query and relaxed_query != query:
+        variants.append(relaxed_query)
+        relaxed_terms = _canonical_search_terms(relaxed_query)
+        if "ETF" not in relaxed_terms and "UCITS" not in relaxed_terms:
+            variants.append(f"{relaxed_query} UCITS ETF")
 
-    variants.append(relaxed_query)
-    relaxed_terms = _canonical_search_terms(relaxed_query)
-    if "ETF" not in relaxed_terms and "UCITS" not in relaxed_terms:
-        variants.append(f"{relaxed_query} UCITS ETF")
+    requested_terms = _canonical_search_terms(query)
+    if requested_terms & INDEX_PROVIDER_TERMS:
+        return tuple(variants)
+    for required_terms, extra_queries, _ in INDEX_QUERY_EXPANSIONS:
+        if not required_terms.issubset(requested_terms):
+            continue
+        variants.extend(
+            extra_query for extra_query in extra_queries if extra_query not in variants
+        )
     return tuple(variants)
 
 
@@ -179,14 +208,26 @@ def _canonical_search_terms(value: str) -> frozenset[str]:
     return frozenset(SEARCH_TERM_ALIASES.get(term, term) for term in terms)
 
 
+def _preferred_symbols_for_query(query: str) -> frozenset[str]:
+    requested_terms = _canonical_search_terms(query)
+    if requested_terms & INDEX_PROVIDER_TERMS:
+        return frozenset()
+    preferred: set[str] = set()
+    for required_terms, _, symbols in INDEX_QUERY_EXPANSIONS:
+        if required_terms.issubset(requested_terms):
+            preferred.update(symbols)
+    return frozenset(preferred)
+
+
 def _candidate_rank(
     candidate: InstrumentCandidate,
     *,
     query_symbol: str | None,
+    preferred_symbols: frozenset[str],
     term_matches: int,
     has_long_name: bool,
     provider_position: int,
-) -> tuple[int, int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int]:
     """Rank exact symbols and complete names before weaker Yahoo matches."""
 
     exact_symbol = query_symbol is not None and candidate.symbol == query_symbol
@@ -198,6 +239,7 @@ def _candidate_rank(
     return (
         0 if exact_symbol else 1,
         0 if exact_base_symbol else 1,
+        0 if candidate.symbol in preferred_symbols else 1,
         -term_matches,
         _provider_type_rank(candidate),
         0 if has_long_name else 1,
@@ -209,6 +251,7 @@ def normalize_search_results(
     quotes: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     *,
     query: str = "",
+    preferred_symbols: frozenset[str] = frozenset(),
 ) -> tuple[InstrumentCandidate, ...]:
     """Map partial Yahoo quote dictionaries to ranked, deduplicated candidates."""
 
@@ -246,19 +289,16 @@ def normalize_search_results(
                 quote.get("typeDisp"),
             ),
         )
-        ranked_candidates.append(
-            (candidate, bool(long_name), provider_position)
-        )
+        ranked_candidates.append((candidate, bool(long_name), provider_position))
 
     ranked_candidates.sort(
         key=lambda item: _candidate_rank(
             item[0],
             query_symbol=query_symbol,
+            preferred_symbols=preferred_symbols,
             term_matches=len(
                 requested_terms
-                & _canonical_search_terms(
-                    f"{item[0].symbol} {item[0].display_name}"
-                )
+                & _canonical_search_terms(f"{item[0].symbol} {item[0].display_name}")
             ),
             has_long_name=item[1],
             provider_position=item[2],
@@ -304,9 +344,7 @@ def fetch_average_daily_volumes(
             return {}
         volumes = history["Volume"]
     elif len(normalized_symbols) == 1 and "Volume" in history.columns:
-        volumes = history[["Volume"]].rename(
-            columns={"Volume": normalized_symbols[0]}
-        )
+        volumes = history[["Volume"]].rename(columns={"Volume": normalized_symbols[0]})
     else:
         return {}
 
@@ -352,16 +390,14 @@ def add_candidate_volumes(
         share_class_matches = tuple(
             candidate
             for candidate in enriched
-            if requested_share_classes
-            & _canonical_search_terms(candidate.display_name)
+            if requested_share_classes & _canonical_search_terms(candidate.display_name)
         )
         if "ACC" in requested_share_classes:
             share_class_matches += tuple(
                 candidate
                 for candidate in enriched
                 if candidate not in share_class_matches
-                and "UCITS"
-                in _canonical_search_terms(candidate.display_name)
+                and "UCITS" in _canonical_search_terms(candidate.display_name)
             )
         if share_class_matches:
             ranked_pool = share_class_matches
@@ -370,10 +406,7 @@ def add_candidate_volumes(
         ranked = sorted(
             enumerate(ranked_pool),
             key=lambda item: (
-                0
-                if query_symbol is not None
-                and item[1].symbol == query_symbol
-                else 1,
+                0 if query_symbol is not None and item[1].symbol == query_symbol else 1,
                 0 if item[1].average_daily_volume is not None else 1,
                 -(item[1].average_daily_volume or 0.0),
                 item[0],
@@ -384,24 +417,17 @@ def add_candidate_volumes(
     ranked = sorted(
         enumerate(ranked_pool),
         key=lambda item: (
+            0 if query_symbol is not None and item[1].symbol == query_symbol else 1,
             0
-            if query_symbol is not None
-            and item[1].symbol == query_symbol
-            else 1,
-            0
-            if requested_share_classes
-            & _canonical_search_terms(item[1].display_name)
+            if requested_share_classes & _canonical_search_terms(item[1].display_name)
             else 1,
             -len(
                 requested_terms
-                & _canonical_search_terms(
-                    f"{item[1].symbol} {item[1].display_name}"
-                )
+                & _canonical_search_terms(f"{item[1].symbol} {item[1].display_name}")
             ),
             0
             if requested_share_classes
-            and "UCITS"
-            in _canonical_search_terms(item[1].display_name)
+            and "UCITS" in _canonical_search_terms(item[1].display_name)
             else 1,
             _provider_type_rank(item[1]),
             0 if item[1].average_daily_volume is not None else 1,
@@ -464,9 +490,7 @@ def search_instruments(
             continue
         successful_searches += 1
         if quotes:
-            combined_quotes.extend(
-                quote for quote in quotes if isinstance(quote, dict)
-            )
+            combined_quotes.extend(quote for quote in quotes if isinstance(quote, dict))
 
     if successful_searches == 0 and first_error is not None:
         raise InstrumentSearchError(normalized_query) from first_error
@@ -474,13 +498,12 @@ def search_instruments(
     candidate_pool = normalize_search_results(
         combined_quotes,
         query=normalized_query,
+        preferred_symbols=_preferred_symbols_for_query(normalized_query),
     )[:MAX_SEARCH_CANDIDATES]
     if not candidate_pool or volume_loader is None:
         return candidate_pool[:result_limit]
     try:
-        volumes = volume_loader(
-            tuple(candidate.symbol for candidate in candidate_pool)
-        )
+        volumes = volume_loader(tuple(candidate.symbol for candidate in candidate_pool))
     except Exception:
         volumes = {}
     return add_candidate_volumes(
@@ -749,9 +772,7 @@ def build_custom_marts(
         lambda series: series.pct_change().rolling(30, min_periods=2).std()
     )
     risk["annualized_vol_30d"] = risk["rolling_vol_30d"] * np.sqrt(252)
-    risk["drawdown"] = grouped.transform(
-        lambda series: series / series.cummax() - 1.0
-    )
+    risk["drawdown"] = grouped.transform(lambda series: series / series.cummax() - 1.0)
     return returns[RETURN_COLUMNS], risk[RISK_COLUMNS]
 
 

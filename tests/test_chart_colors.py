@@ -83,8 +83,23 @@ def test_entrypoint_uses_session_preserving_navigation():
     assert 'url_path="Ask"' in source
     assert source.index("lang = ui_controls()") < source.index("st.navigation(")
     assert 'key="ui_language"' in i18n_source
-    assert 'required=True' in i18n_source
+    assert "required=True" in i18n_source
     assert 'persist_state="session"' in i18n_source
+
+
+def test_strategy_lab_uses_compact_editor_and_result_tabs():
+    source = (ROOT / "dashboard" / "pages" / "1_Strategy_Lab.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "@st.dialog(" in source
+    assert 'tr("simulation.apply", lang)' in source
+    assert 'tr("strategy.tab_overview", lang)' in source
+    assert 'tr("strategy.tab_growth", lang)' in source
+    assert 'tr("strategy.tab_drawdown", lang)' in source
+    assert 'tr("strategy.tab_details", lang)' in source
+    assert "key=REFERENCE_SELECTION_STATE_KEY" in source
+    assert 'key="strategy_view_mode"' not in source
 
 
 def test_mobile_and_readability_defaults_are_part_of_the_app_contract():

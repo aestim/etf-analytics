@@ -95,6 +95,13 @@ def test_search_query_variants_relax_share_class_terms_only():
     assert search_query_variants("NASDAQ 100 Acc ETF") == (
         "NASDAQ 100 Acc ETF",
         "NASDAQ 100 ETF",
+        "NASDAQ 100 UCITS ETF",
+        "Invesco QQQ",
+    )
+    assert search_query_variants("NASDAQ 100") == (
+        "NASDAQ 100",
+        "NASDAQ 100 UCITS ETF",
+        "Invesco QQQ",
     )
     assert search_query_variants("Vanguard FTSE All-World") == (
         "Vanguard FTSE All-World",
@@ -231,8 +238,7 @@ def test_search_instruments_uses_injected_factory_and_no_market_history_call():
 def test_search_instruments_enforces_result_limit_on_provider_response():
     class OverfullSearch:
         quotes = [
-            {"symbol": f"ETF{index}.DE", "quoteType": "ETF"}
-            for index in range(12)
+            {"symbol": f"ETF{index}.DE", "quoteType": "ETF"} for index in range(12)
         ]
 
     candidates = search_instruments(
@@ -263,9 +269,7 @@ def test_search_instruments_retries_without_share_class_hint_and_reranks():
                 },
                 {
                     "symbol": "NASQ.AS",
-                    "longname": (
-                        "iShares NASDAQ 100 Swap UCITS ETF USD (Acc)"
-                    ),
+                    "longname": ("iShares NASDAQ 100 Swap UCITS ETF USD (Acc)"),
                     "quoteType": "ETF",
                 },
             ]
@@ -452,8 +456,7 @@ def test_search_instruments_volume_mode_enriches_before_final_limit():
         "European ETF",
         search_factory=lambda *args, **kwargs: LargeSearch(),
         volume_loader=lambda symbols: {
-            symbol: (1_000_000 if symbol == "ETF10.DE" else 1)
-            for symbol in symbols
+            symbol: (1_000_000 if symbol == "ETF10.DE" else 1) for symbol in symbols
         },
         sort_mode="volume",
     )
@@ -470,9 +473,7 @@ def test_search_instruments_keeps_results_when_one_variant_fails():
     def search_factory(query, **kwargs):
         if query != "NASDAQ 100":
             raise TimeoutError("one Yahoo variant failed")
-        return SearchResult(
-            [{"symbol": "NQSE.DE", "quoteType": "ETF"}]
-        )
+        return SearchResult([{"symbol": "NQSE.DE", "quoteType": "ETF"}])
 
     candidates = search_instruments(
         "NASDAQ 100 acc",
@@ -480,6 +481,45 @@ def test_search_instruments_keeps_results_when_one_variant_fails():
     )
 
     assert [candidate.symbol for candidate in candidates] == ["NQSE.DE"]
+
+
+def test_nasdaq_100_alias_search_keeps_qqq_in_large_candidate_pool():
+    class SearchResult:
+        def __init__(self, quotes):
+            self.quotes = quotes
+
+    def search_factory(query, **kwargs):
+        if query == "Invesco QQQ":
+            return SearchResult(
+                [
+                    {
+                        "symbol": "QQQ",
+                        "longname": "Invesco QQQ Trust",
+                        "quoteType": "ETF",
+                    }
+                ]
+            )
+        return SearchResult(
+            [
+                {
+                    "symbol": f"ETF{index}.{query[-2:].upper()}",
+                    "longname": f"NASDAQ 100 ETF {index}",
+                    "quoteType": "ETF",
+                }
+                for index in range(20)
+            ]
+        )
+
+    candidates = search_instruments(
+        "NASDAQ 100",
+        search_factory=search_factory,
+        volume_loader=lambda symbols: {
+            symbol: 50_000_000 if symbol == "QQQ" else 1_000 for symbol in symbols
+        },
+        sort_mode="volume",
+    )
+
+    assert candidates[0].symbol == "QQQ"
 
 
 def test_search_instruments_maps_provider_failure_and_empty_results():
@@ -493,10 +533,13 @@ def test_search_instruments_maps_provider_failure_and_empty_results():
     class EmptySearch:
         quotes = []
 
-    assert search_instruments(
-        "not found",
-        search_factory=lambda *args, **kwargs: EmptySearch(),
-    ) == ()
+    assert (
+        search_instruments(
+            "not found",
+            search_factory=lambda *args, **kwargs: EmptySearch(),
+        )
+        == ()
+    )
 
 
 def test_direct_symbol_fallback_excludes_isins_and_names_with_spaces():
@@ -611,9 +654,7 @@ def test_indexed_price_comparison_uses_first_shared_date_and_common_base():
 
     assert indexed["price_date"].min() == pd.Timestamp("2026-01-02")
     first_values = indexed.groupby("ticker").head(1)
-    assert first_values["indexed_price"].tolist() == pytest.approx(
-        [100.0, 100.0]
-    )
+    assert first_values["indexed_price"].tolist() == pytest.approx([100.0, 100.0])
     final_values = indexed.groupby("ticker").tail(1).set_index("ticker")
     assert final_values.loc["AAA", "indexed_price"] == pytest.approx(150.0)
     assert final_values.loc["BBB", "indexed_price"] == pytest.approx(50.0)

@@ -348,8 +348,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "🧪 투자 방법 비교",
     },
     "strategy.subtitle": {
-        "en": "Choose how to invest and rebalance your ETF mix, then compare it with another custom strategy and five examples. **For education only. Past results do not predict future performance.**",
-        "ko": "ETF 비중과 투자 시점, 리밸런싱 여부를 정한 뒤 다른 내 전략과 예시 전략 5개를 비교하세요. **학습용 비교이며 과거 성과가 미래 수익을 보장하지 않습니다.**",
+        "en": "Review one portfolio, choose the strategies to compare, and focus on the results. **For education only. Past results do not predict future performance.**",
+        "ko": "내 포트폴리오와 비교 대상을 고른 뒤 결과를 한곳에서 확인하세요. **학습용 비교이며 과거 성과가 미래 수익을 보장하지 않습니다.**",
     },
     "strategy.mode_label": {
         "en": "Choose a view",
@@ -485,6 +485,10 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "The calculation rules and assumptions are documented in `analytics/strategies.py`. TQQQ is leveraged and can suffer much larger losses than an unleveraged ETF.",
         "ko": "계산 규칙과 가정은 `analytics/strategies.py`에 있습니다. TQQQ는 레버리지 ETF이므로 일반 ETF보다 손실 폭이 매우 커질 수 있습니다.",
     },
+    "strategy.tab_overview": {"en": "Overview", "ko": "요약"},
+    "strategy.tab_growth": {"en": "Growth", "ko": "투자금 변화"},
+    "strategy.tab_drawdown": {"en": "Drawdown", "ko": "하락 위험"},
+    "strategy.tab_details": {"en": "Details", "ko": "상세 정보"},
     "simulation.intro": {
         "en": "Build one strategy by choosing ETFs, entry timing and rebalancing. The five examples appear automatically below, and you can add a second strategy of your own.",
         "ko": "ETF와 투자 시점, 리밸런싱 여부를 골라 내 전략을 만드세요. 아래에서 예시 전략 5개를 바로 비교할 수 있고 내 전략을 하나 더 추가할 수도 있습니다.",
@@ -697,6 +701,27 @@ COPY: dict[str, dict[Language, str]] = {
     "simulation.reference_title": {
         "en": "Compare strategies",
         "ko": "전략 비교",
+    },
+    "simulation.workspace_caption": {
+        "en": "Keep the setup compact here. Edit a strategy only when you need to change its ETFs or rules.",
+        "ko": "현재 설정은 간단히 확인하고, ETF나 투자 규칙을 바꿀 때만 전략 편집을 여세요.",
+    },
+    "simulation.edit": {"en": "Edit", "ko": "편집"},
+    "simulation.apply": {
+        "en": "Apply and compare",
+        "ko": "적용하고 비교",
+    },
+    "simulation.editor_primary_title": {
+        "en": "Edit my strategy",
+        "ko": "내 전략 편집",
+    },
+    "simulation.editor_second_title": {
+        "en": "Add or edit another strategy",
+        "ko": "비교할 내 전략 편집",
+    },
+    "simulation.editor_caption": {
+        "en": "Changes affect the results only after you choose Apply and compare.",
+        "ko": "설정을 바꾼 뒤 ‘적용하고 비교’를 눌러야 결과에 반영됩니다.",
     },
     "simulation.reference_caption": {
         "en": "Your strategy and all five examples are shown from the start. They use the same budget and dates, but the examples use different ETFs as well as different rules.",
