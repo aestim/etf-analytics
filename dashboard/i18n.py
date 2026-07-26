@@ -108,8 +108,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "🔎 현재 세션에 추가할 ETF 찾기",
     },
     "custom.help": {
-        "en": "Search by ETF name, ISIN or ticker. Exact ticker matches and complete Yahoo names appear first, but no exchange is selected automatically.",
-        "ko": "ETF 이름, ISIN 또는 티커로 검색하세요. 정확한 티커와 Yahoo의 전체 이름이 있는 후보를 먼저 보여주지만 거래소는 자동 선택하지 않습니다.",
+        "en": "Search by ETF name, ISIN or ticker, then press Add on the exact listing you want. No exchange is selected automatically.",
+        "ko": "ETF 이름, ISIN 또는 티커로 검색한 뒤 원하는 상장 종목의 추가 버튼을 누르세요. 거래소는 자동 선택하지 않습니다.",
     },
     "custom.input_label": {
         "en": "ETF name, ISIN or Yahoo Finance symbol",
@@ -128,41 +128,18 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Yahoo listings for `{query}`: {count}",
         "ko": "`{query}`의 Yahoo 상장 후보: {count}개",
     },
-    "custom.search_results": {
-        "en": "Choose a listing, then add it to this session",
-        "ko": "상장 종목을 고른 뒤 현재 세션에 추가하세요",
+    "custom.add": {"en": "Add", "ko": "추가"},
+    "custom.average_volume": {
+        "en": "1-month avg. daily volume: {volume}",
+        "ko": "최근 1개월 일평균 거래량: {volume}",
     },
-    "custom.filter_label": {
-        "en": "Filter search results",
-        "ko": "검색 결과 필터",
+    "custom.volume_unavailable": {
+        "en": "Recent volume unavailable",
+        "ko": "최근 거래량 정보 없음",
     },
-    "custom.filter_all": {
-        "en": "All",
-        "ko": "전체",
-    },
-    "custom.filter_etf": {
-        "en": "ETFs",
-        "ko": "ETF",
-    },
-    "custom.filter_other": {
-        "en": "Other Yahoo types",
-        "ko": "기타 Yahoo 분류",
-    },
-    "custom.no_filtered_results": {
-        "en": "No candidates match this filter.",
-        "ko": "이 필터에 맞는 후보가 없습니다.",
-    },
-    "custom.select": {
-        "en": "Select",
-        "ko": "선택",
-    },
-    "custom.selected_short": {
-        "en": "Selected",
-        "ko": "선택됨",
-    },
-    "custom.add_selected": {
-        "en": "Add selected ETF",
-        "ko": "선택한 ETF 추가",
+    "custom.volume_sort_notice": {
+        "en": "Best text/share-class matches come first; equally relevant listings are ordered by 1-month average daily volume.",
+        "ko": "검색어·share class가 잘 맞는 종목을 먼저 묶고, 같은 관련도 안에서는 1개월 일평균 거래량 순으로 보여줍니다.",
     },
     "custom.direct_fallback": {
         "en": "Yahoo returned no search candidates. You can still try the exact symbol below.",
@@ -263,13 +240,33 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "배당 반영 가격",
     },
     "home.adjusted_price_caption": {
-        "en": "Historical price adjusted for dividends and stock splits",
-        "ko": "배당과 주식 분할을 반영한 과거 가격입니다",
+        "en": "Raw listing prices adjusted for dividends and splits. Different currencies and face values are not directly comparable.",
+        "ko": "배당과 분할을 반영한 상장 가격입니다. 통화와 액면가격이 다르면 직접 비교할 수 없습니다.",
+    },
+    "home.indexed_price": {
+        "en": "Indexed price comparison",
+        "ko": "기준값으로 가격 비교",
+    },
+    "home.indexed_price_caption": {
+        "en": "Each ETF starts at 100 on the first shared trading date ({date}), so relative growth is comparable.",
+        "ko": "모든 ETF가 함께 거래된 첫날({date})을 100으로 맞춰 상대적 성장을 비교합니다.",
+    },
+    "home.show_raw_prices": {
+        "en": "Show raw listing prices",
+        "ko": "상장 원가격 보기",
+    },
+    "home.show_raw_prices_help": {
+        "en": "Off is recommended for comparing ETFs with different face values or trading currencies.",
+        "ko": "액면가격이나 거래 통화가 다른 ETF를 비교할 때는 끄는 것을 권장합니다.",
+    },
+    "home.no_common_dates": {
+        "en": "The selected ETFs have no shared trading dates, so an indexed comparison cannot be built.",
+        "ko": "선택한 ETF끼리 공통 거래일이 없어 기준값 비교를 만들 수 없습니다.",
     },
     "home.cumulative_return": {"en": "Total return", "ko": "누적수익률"},
     "home.cumulative_return_caption": {
-        "en": "How much a starting value of 1 would have gained or lost",
-        "ko": "시작할 때 1을 투자했다면 얼마나 늘거나 줄었는지 보여줍니다",
+        "en": "Gain or loss from the same shared start date ({date})",
+        "ko": "같은 공통 시작일({date})부터의 수익률입니다",
     },
     "home.volatility": {
         "en": "30-day price swings",

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -62,6 +62,7 @@ class InstrumentCandidate:
     display_name: str
     exchange: str
     provider_type: str
+    average_daily_volume: float | None = None
 
 
 class CustomEtfError(ValueError):
@@ -120,9 +121,15 @@ def search_query_variants(value: str) -> tuple[str, ...]:
         if token.strip("()[]{}.,").upper() not in SHARE_CLASS_SEARCH_TERMS
     ]
     relaxed_query = " ".join(relaxed_tokens)
-    if relaxed_query and relaxed_query != query:
-        return query, relaxed_query
-    return (query,)
+    variants = [query]
+    if not relaxed_query or relaxed_query == query:
+        return tuple(variants)
+
+    variants.append(relaxed_query)
+    relaxed_terms = _canonical_search_terms(relaxed_query)
+    if "ETF" not in relaxed_terms and "UCITS" not in relaxed_terms:
+        variants.append(f"{relaxed_query} UCITS ETF")
+    return tuple(variants)
 
 
 def looks_like_isin(value: str) -> bool:
@@ -259,22 +266,134 @@ def normalize_search_results(
     return tuple(item[0] for item in ranked_candidates)
 
 
+def fetch_average_daily_volumes(
+    symbols: tuple[str, ...],
+    *,
+    downloader: Callable[..., pd.DataFrame] | None = None,
+) -> dict[str, float]:
+    """Fetch one month of candidate volumes in a single best-effort request."""
+
+    normalized_symbols = tuple(
+        dict.fromkeys(normalize_ticker(symbol) for symbol in symbols)
+    )
+    if not normalized_symbols:
+        return {}
+    if downloader is None:
+        import yfinance as yf
+
+        downloader = yf.download
+
+    try:
+        history = downloader(
+            list(normalized_symbols),
+            period="1mo",
+            auto_adjust=False,
+            group_by="column",
+            progress=False,
+            threads=True,
+            timeout=10,
+        )
+    except Exception:
+        return {}
+    if not isinstance(history, pd.DataFrame) or history.empty:
+        return {}
+
+    if isinstance(history.columns, pd.MultiIndex):
+        if "Volume" not in history.columns.get_level_values(0):
+            return {}
+        volumes = history["Volume"]
+    elif len(normalized_symbols) == 1 and "Volume" in history.columns:
+        volumes = history[["Volume"]].rename(
+            columns={"Volume": normalized_symbols[0]}
+        )
+    else:
+        return {}
+
+    if isinstance(volumes, pd.Series):
+        volumes = volumes.to_frame(name=normalized_symbols[0])
+    numeric_volumes = volumes.apply(pd.to_numeric, errors="coerce")
+    averages = numeric_volumes.where(numeric_volumes > 0).mean(skipna=True)
+    return {
+        str(symbol): float(volume)
+        for symbol, volume in averages.items()
+        if pd.notna(volume)
+    }
+
+
+def add_candidate_volumes(
+    candidates: tuple[InstrumentCandidate, ...],
+    volumes: dict[str, float],
+    *,
+    query: str,
+) -> tuple[InstrumentCandidate, ...]:
+    """Attach recent volume and sort within relevance groups by liquidity.
+
+    A full Yahoo symbol remains pinned first. Missing volume values retain
+    their relevance order at the end of the result list.
+    """
+
+    query_symbol = _symbol_shaped_query(query)
+    requested_terms = _canonical_search_terms(query)
+    requested_share_classes = requested_terms & {"ACC", "DIST"}
+    enriched = tuple(
+        replace(
+            candidate,
+            average_daily_volume=volumes.get(candidate.symbol),
+        )
+        for candidate in candidates
+    )
+    ranked = sorted(
+        enumerate(enriched),
+        key=lambda item: (
+            0
+            if query_symbol is not None
+            and item[1].symbol == query_symbol
+            else 1,
+            0
+            if requested_share_classes
+            & _canonical_search_terms(item[1].display_name)
+            else 1,
+            -len(
+                requested_terms
+                & _canonical_search_terms(
+                    f"{item[1].symbol} {item[1].display_name}"
+                )
+            ),
+            0
+            if requested_share_classes
+            and "UCITS"
+            in _canonical_search_terms(item[1].display_name)
+            else 1,
+            _provider_type_rank(item[1]),
+            0 if item[1].average_daily_volume is not None else 1,
+            -(item[1].average_daily_volume or 0.0),
+            item[0],
+        ),
+    )
+    return tuple(candidate for _, candidate in ranked)
+
+
 def search_instruments(
     query: str,
     *,
     search_factory: Callable[..., Any] | None = None,
+    volume_loader: Callable[[tuple[str, ...]], dict[str, float]] | None = None,
     max_results: int = MAX_SEARCH_RESULTS,
 ) -> tuple[InstrumentCandidate, ...]:
     """Search Yahoo for names, ISINs or symbols and return selection candidates."""
 
     query_variants = search_query_variants(query)
     normalized_query = query_variants[0]
+    use_default_search = search_factory is None
     if search_factory is None:
         import yfinance as yf
 
         search_factory = yf.Search
+    if volume_loader is None and use_default_search:
+        volume_loader = fetch_average_daily_volumes
 
     result_limit = max(1, min(int(max_results), MAX_SEARCH_RESULTS))
+    combined_quotes: list[dict[str, Any]] = []
     for provider_query in query_variants:
         try:
             search = search_factory(
@@ -297,11 +416,27 @@ def search_instruments(
         except Exception as exc:
             raise InstrumentSearchError(normalized_query) from exc
         if quotes:
-            return normalize_search_results(
-                quotes,
-                query=normalized_query,
-            )[:result_limit]
-    return ()
+            combined_quotes.extend(
+                quote for quote in quotes if isinstance(quote, dict)
+            )
+
+    candidates = normalize_search_results(
+        combined_quotes,
+        query=normalized_query,
+    )[:result_limit]
+    if not candidates or volume_loader is None:
+        return candidates
+    try:
+        volumes = volume_loader(
+            tuple(candidate.symbol for candidate in candidates)
+        )
+    except Exception:
+        volumes = {}
+    return add_candidate_volumes(
+        candidates,
+        volumes,
+        query=normalized_query,
+    )
 
 
 def direct_symbol_candidate(query: str) -> InstrumentCandidate | None:
@@ -478,6 +613,59 @@ def fetch_price_history(
     except Exception as exc:
         raise PriceDataUnavailableError(normalized_ticker) from exc
     return normalize_price_history(history, normalized_ticker)
+
+
+def build_indexed_price_comparison(
+    prices: pd.DataFrame,
+    *,
+    base_value: float = 100.0,
+) -> pd.DataFrame:
+    """Rebase selected prices to one common date and starting value.
+
+    Rows are limited to dates shared by every selected ticker, avoiding the
+    misleading comparison produced by different inception dates or face values.
+    """
+
+    columns = ["ticker", "price_date", "indexed_price"]
+    required = {"ticker", "price_date", "adj_close"}
+    if prices.empty or not required.issubset(prices.columns):
+        return pd.DataFrame(columns=columns)
+    if not np.isfinite(base_value) or base_value <= 0:
+        raise ValueError("base_value must be a positive finite number")
+
+    frame = prices[["ticker", "price_date", "adj_close"]].copy()
+    frame["price_date"] = pd.to_datetime(frame["price_date"], errors="coerce")
+    frame["adj_close"] = pd.to_numeric(frame["adj_close"], errors="coerce")
+    frame = (
+        frame.dropna(subset=["ticker", "price_date", "adj_close"])
+        .drop_duplicates(["ticker", "price_date"], keep="last")
+        .sort_values(["price_date", "ticker"])
+    )
+    frame = frame[frame["adj_close"] > 0]
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+
+    pivot = frame.pivot(
+        index="price_date",
+        columns="ticker",
+        values="adj_close",
+    ).dropna(how="any")
+    if pivot.empty:
+        return pd.DataFrame(columns=columns)
+
+    indexed = pivot.divide(pivot.iloc[0]).multiply(base_value)
+    result = (
+        indexed.rename_axis(columns="ticker")
+        .reset_index()
+        .melt(
+            id_vars="price_date",
+            var_name="ticker",
+            value_name="indexed_price",
+        )
+        .sort_values(["ticker", "price_date"])
+        .reset_index(drop=True)
+    )
+    return result[columns]
 
 
 def build_custom_marts(

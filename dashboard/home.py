@@ -23,7 +23,7 @@ from custom_etf import (
     IsinNotSupportedError,
     PriceDataUnavailableError,
     add_session_prices,
-    candidate_for_symbol,
+    build_indexed_price_comparison,
     clear_session_prices,
     direct_symbol_candidate,
     fetch_price_history,
@@ -75,7 +75,7 @@ SEARCH_QUERY_KEY = "custom_etf_search_query"
 SEARCH_RESULTS_KEY = "custom_etf_search_results"
 SEARCH_DIRECT_FALLBACK_KEY = "custom_etf_direct_fallback"
 SEARCH_GENERATION_KEY = "custom_etf_search_generation"
-SEARCH_SELECTED_SYMBOL_KEY = "custom_etf_selected_symbol"
+HOME_SELECTED_TICKERS_KEY = "home_selected_tickers"
 
 
 def _store_search_state(
@@ -84,24 +84,32 @@ def _store_search_state(
     *,
     direct_fallback: bool,
 ) -> None:
-    """Replace search state so a prior candidate selection cannot leak forward."""
+    """Replace the search state for the current query."""
 
     st.session_state[SEARCH_QUERY_KEY] = query
     st.session_state[SEARCH_RESULTS_KEY] = candidates
     st.session_state[SEARCH_DIRECT_FALLBACK_KEY] = direct_fallback
-    st.session_state[SEARCH_SELECTED_SYMBOL_KEY] = None
     generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
     st.session_state[SEARCH_GENERATION_KEY] = generation + 1
 
 
-def _candidate_matches_filter(
-    candidate: InstrumentCandidate,
-    selected_filter: str,
-) -> bool:
-    if selected_filter == "all":
-        return True
-    is_etf = candidate.provider_type.upper() == "ETF"
-    return is_etf if selected_filter == "etf" else not is_etf
+def _select_ticker_for_charts(ticker: str) -> None:
+    """Include a successfully resolved ticker in the Overview charts."""
+
+    current = st.session_state.get(HOME_SELECTED_TICKERS_KEY, [])
+    selected = list(current) if isinstance(current, (list, tuple)) else []
+    if ticker not in selected:
+        st.session_state[HOME_SELECTED_TICKERS_KEY] = [*selected, ticker]
+
+
+def _unselect_ticker_for_charts(ticker: str) -> None:
+    """Remove a deleted session ticker from the Overview chart widget."""
+
+    current = st.session_state.get(HOME_SELECTED_TICKERS_KEY, [])
+    if isinstance(current, (list, tuple)):
+        st.session_state[HOME_SELECTED_TICKERS_KEY] = [
+            selected for selected in current if selected != ticker
+        ]
 
 
 def _candidate_identity_html(
@@ -119,9 +127,18 @@ def _candidate_identity_html(
     provider_type = html.escape(
         candidate.provider_type or tr("custom.type_unknown", lang)
     )
+    volume = (
+        tr(
+            "custom.average_volume",
+            lang,
+            volume=f"{candidate.average_daily_volume:,.0f}",
+        )
+        if candidate.average_daily_volume is not None
+        else tr("custom.volume_unavailable", lang)
+    )
     return (
         "<div style='display:flex;gap:.75rem;align-items:center'>"
-        "<div style='min-width:2.8rem;height:2.8rem;border-radius:.75rem;"
+        "<div style='min-width:3rem;height:3rem;border-radius:.75rem;"
         "display:flex;align-items:center;justify-content:center;"
         "background:#12a8d8;color:white;font-size:.72rem;font-weight:700'>"
         f"{badge}</div>"
@@ -129,6 +146,8 @@ def _candidate_identity_html(
         f"<div style='font-weight:650;line-height:1.25'>{name}</div>"
         "<div style='opacity:.68;font-size:.82rem;margin-top:.2rem'>"
         f"{symbol} · {exchange} · {provider_type}</div>"
+        "<div style='opacity:.68;font-size:.78rem;margin-top:.16rem'>"
+        f"{html.escape(volume)}</div>"
         "</div></div>"
     )
 
@@ -144,6 +163,7 @@ def _add_custom_symbol(
         normalized_ticker = normalize_ticker(ticker)
         built_in = set(returns_df["ticker"].dropna().astype(str))
         if normalized_ticker in built_in:
+            _select_ticker_for_charts(normalized_ticker)
             st.info(
                 tr(
                     "custom.already_available",
@@ -157,12 +177,14 @@ def _add_custom_symbol(
         ):
             prices = cached_custom_history(normalized_ticker)
         add_session_prices(st.session_state, prices)
+        _select_ticker_for_charts(normalized_ticker)
         st.success(tr("custom.added", lang, ticker=normalized_ticker))
     except IsinNotSupportedError:
         st.error(tr("custom.isin_error", lang))
     except InvalidTickerError:
         st.error(tr("custom.invalid_ticker", lang))
     except DuplicateTickerError as exc:
+        _select_ticker_for_charts(str(exc))
         st.info(tr("custom.duplicate", lang, ticker=str(exc)))
     except CustomEtfLimitError:
         st.error(tr("custom.limit", lang))
@@ -256,82 +278,32 @@ def custom_etf_controls(
                 st.warning(tr("custom.verify_isin", lang))
             else:
                 st.caption(tr("custom.verify_listing", lang))
-
+            st.caption(tr("custom.volume_sort_notice", lang))
             generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
-            selected_filter = st.segmented_control(
-                tr("custom.filter_label", lang),
-                options=["all", "etf", "other"],
-                default="all",
-                required=True,
-                format_func=lambda value: tr(
-                    f"custom.filter_{value}",
-                    lang,
-                ),
-                key=f"custom_etf_filter_{generation}",
-                label_visibility="collapsed",
-            )
-            filtered_candidates = tuple(
-                candidate
-                for candidate in candidates
-                if _candidate_matches_filter(candidate, selected_filter)
-            )
-            if not filtered_candidates:
-                st.info(tr("custom.no_filtered_results", lang))
-
-            selected_symbol = st.session_state.get(
-                SEARCH_SELECTED_SYMBOL_KEY
-            )
-            for candidate in filtered_candidates:
-                is_selected = selected_symbol == candidate.symbol
+            for candidate in candidates:
                 with st.container(border=True):
                     identity_col, action_col = st.columns(
-                        [5, 1.35],
+                        [8, 1],
                         vertical_alignment="center",
                     )
                     identity_col.markdown(
                         _candidate_identity_html(candidate, lang),
                         unsafe_allow_html=True,
                     )
-                    if is_selected:
-                        action_col.button(
-                            tr("custom.selected_short", lang),
-                            key=(
-                                f"selected_custom_etf_"
-                                f"{generation}_{candidate.symbol}"
-                            ),
-                            disabled=True,
-                            width="stretch",
-                        )
-                        if st.button(
-                            tr("custom.add_selected", lang),
-                            type="primary",
-                            key=(
-                                f"add_custom_etf_"
-                                f"{generation}_{candidate.symbol}"
-                            ),
-                            width="stretch",
-                        ):
-                            selected = candidate_for_symbol(
-                                candidates,
-                                candidate.symbol,
-                            )
-                            _add_custom_symbol(
-                                selected.symbol,
-                                returns_df,
-                                lang,
-                            )
-                    elif action_col.button(
-                        tr("custom.select", lang),
+                    if action_col.button(
+                        tr("custom.add", lang),
+                        type="primary",
                         key=(
-                            f"select_custom_etf_"
+                            f"add_custom_etf_"
                             f"{generation}_{candidate.symbol}"
                         ),
                         width="stretch",
                     ):
-                        st.session_state[SEARCH_SELECTED_SYMBOL_KEY] = (
-                            candidate.symbol
+                        _add_custom_symbol(
+                            candidate.symbol,
+                            returns_df,
+                            lang,
                         )
-                        st.rerun()
         elif search_query:
             st.info(tr("custom.no_results", lang))
 
@@ -346,8 +318,11 @@ def custom_etf_controls(
                     key=f"remove_custom_{ticker}",
                 ):
                     remove_session_ticker(st.session_state, ticker)
+                    _unselect_ticker_for_charts(ticker)
                     st.rerun()
             if st.button(tr("custom.clear", lang), key="clear_custom_etfs"):
+                for ticker in tickers:
+                    _unselect_ticker_for_charts(ticker)
                 clear_session_prices(st.session_state)
                 st.rerun()
         st.caption(tr("custom.session_notice", lang))
@@ -367,6 +342,7 @@ def line_chart(
         {
             "price_date": "Date",
             "adj_close": "Dividend-adjusted price",
+            "indexed_price": "Growth of 100",
             "cum_return": "Total return",
             "rolling_vol_30d": "30-day price swings",
             "ticker": "ETF",
@@ -375,6 +351,7 @@ def line_chart(
         else {
             "price_date": "날짜",
             "adj_close": "배당 반영 가격",
+            "indexed_price": "100 기준 성장",
             "cum_return": "누적수익률",
             "rolling_vol_30d": "30일 가격 변동",
             "ticker": "ETF",
@@ -508,28 +485,66 @@ with st.expander(tr("home.ticker_guide", lang)):
 tickers = sorted(returns_df["ticker"].unique())
 COLORS = ticker_color_map(tickers)  # stable palette across all charts
 beginner_defaults = [ticker for ticker in ("SPY", "BND", "GLD") if ticker in tickers]
+stored_selection = st.session_state.get(HOME_SELECTED_TICKERS_KEY)
+if isinstance(stored_selection, (list, tuple)):
+    valid_selection = [
+        ticker for ticker in stored_selection if ticker in tickers
+    ]
+else:
+    valid_selection = beginner_defaults
+if st.session_state.get(HOME_SELECTED_TICKERS_KEY) != valid_selection:
+    st.session_state[HOME_SELECTED_TICKERS_KEY] = valid_selection
 selected = st.multiselect(
-    tr("home.select_etfs", lang), tickers, default=beginner_defaults
+    tr("home.select_etfs", lang),
+    tickers,
+    key=HOME_SELECTED_TICKERS_KEY,
 )
 if not selected:
     st.info(tr("home.empty_selection", lang))
 filtered = returns_df[returns_df["ticker"].isin(selected)]
 risk_filtered = risk_df[risk_df["ticker"].isin(selected)]
+comparison = build_indexed_price_comparison(filtered)
+show_raw_prices = st.toggle(
+    tr("home.show_raw_prices", lang),
+    help=tr("home.show_raw_prices_help", lang),
+)
+comparison_start = (
+    comparison["price_date"].min().strftime("%Y-%m-%d")
+    if not comparison.empty
+    else ""
+)
+if selected and comparison.empty:
+    st.warning(tr("home.no_common_dates", lang))
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader(tr("home.adjusted_price", lang))
-    st.caption(tr("home.adjusted_price_caption", lang))
-    line_chart(filtered, "adj_close", lang, COLORS)
+    if show_raw_prices:
+        st.subheader(tr("home.adjusted_price", lang))
+        st.caption(tr("home.adjusted_price_caption", lang))
+        line_chart(filtered, "adj_close", lang, COLORS)
+    else:
+        st.subheader(tr("home.indexed_price", lang))
+        st.caption(
+            tr(
+                "home.indexed_price_caption",
+                lang,
+                date=comparison_start,
+            )
+        )
+        line_chart(comparison, "indexed_price", lang, COLORS)
 
 with col2:
     st.subheader(tr("home.cumulative_return", lang))
-    st.caption(tr("home.cumulative_return_caption", lang))
-    cum = filtered.copy()
-    cum["cum_return"] = cum.groupby("ticker")["daily_return"].transform(
-        lambda s: (1 + s.fillna(0)).cumprod() - 1
+    st.caption(
+        tr(
+            "home.cumulative_return_caption",
+            lang,
+            date=comparison_start,
+        )
     )
+    cum = comparison.copy()
+    cum["cum_return"] = cum["indexed_price"] / 100.0 - 1.0
     line_chart(cum, "cum_return", lang, COLORS)
 
 st.subheader(tr("home.volatility", lang))

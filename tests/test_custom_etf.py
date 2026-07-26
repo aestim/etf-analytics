@@ -16,10 +16,13 @@ from custom_etf import (
     InvalidTickerError,
     IsinNotSupportedError,
     PriceDataUnavailableError,
+    add_candidate_volumes,
     add_session_prices,
+    build_indexed_price_comparison,
     build_custom_marts,
     candidate_for_symbol,
     direct_symbol_candidate,
+    fetch_average_daily_volumes,
     fetch_price_history,
     looks_like_isin,
     merge_custom_data,
@@ -87,6 +90,11 @@ def test_search_query_variants_relax_share_class_terms_only():
     assert search_query_variants(" iShares  NASDAQ 100 (Acc) ") == (
         "iShares NASDAQ 100 (Acc)",
         "iShares NASDAQ 100",
+        "iShares NASDAQ 100 UCITS ETF",
+    )
+    assert search_query_variants("NASDAQ 100 Acc ETF") == (
+        "NASDAQ 100 Acc ETF",
+        "NASDAQ 100 ETF",
     )
     assert search_query_variants("Vanguard FTSE All-World") == (
         "Vanguard FTSE All-World",
@@ -271,11 +279,127 @@ def test_search_instruments_retries_without_share_class_hint_and_reranks():
     assert calls == [
         "iShares NASDAQ 100 (Acc)",
         "iShares NASDAQ 100",
+        "iShares NASDAQ 100 UCITS ETF",
     ]
     assert [candidate.symbol for candidate in candidates] == [
         "NASQ.AS",
         "EXXT.DE",
     ]
+
+
+def test_candidate_volume_sort_pins_exact_symbol_and_keeps_missing_last():
+    candidates = normalize_search_results(
+        [
+            {"symbol": "SXRV.DE", "quoteType": "ETF"},
+            {"symbol": "SXRV.HM", "quoteType": "ETF"},
+            {"symbol": "SXRV.SG", "quoteType": "MUTUALFUND"},
+        ],
+        query="SXRV.SG",
+    )
+
+    ranked = add_candidate_volumes(
+        candidates,
+        {"SXRV.DE": 50_000, "SXRV.HM": 100_000},
+        query="SXRV.SG",
+    )
+
+    assert [candidate.symbol for candidate in ranked] == [
+        "SXRV.SG",
+        "SXRV.HM",
+        "SXRV.DE",
+    ]
+    assert ranked[0].average_daily_volume is None
+    assert ranked[1].average_daily_volume == pytest.approx(100_000)
+
+
+def test_candidate_volume_sort_keeps_acc_matches_above_high_volume_income_funds():
+    candidates = normalize_search_results(
+        [
+            {
+                "symbol": "QQQI",
+                "longname": "NEOS Nasdaq 100 High Income ETF",
+                "quoteType": "ETF",
+            },
+            {
+                "symbol": "EQQB.DE",
+                "longname": "Invesco EQQQ Nasdaq-100 UCITS ETF Acc",
+                "quoteType": "ETF",
+            },
+            {
+                "symbol": "XNAS.L",
+                "longname": "Xtrackers Nasdaq 100 UCITS ETF 1C",
+                "quoteType": "ETF",
+            },
+        ],
+        query="NASDAQ 100 acc",
+    )
+
+    ranked = add_candidate_volumes(
+        candidates,
+        {"QQQI": 5_000_000, "EQQB.DE": 3_000, "XNAS.L": 40_000},
+        query="NASDAQ 100 acc",
+    )
+
+    assert [candidate.symbol for candidate in ranked] == [
+        "EQQB.DE",
+        "XNAS.L",
+        "QQQI",
+    ]
+
+
+def test_search_instruments_uses_injected_volume_ordering():
+    class FakeSearch:
+        quotes = [
+            {"symbol": "LOW.DE", "quoteType": "ETF"},
+            {"symbol": "HIGH.DE", "quoteType": "ETF"},
+        ]
+
+    volume_calls = []
+
+    def volume_loader(symbols):
+        volume_calls.append(symbols)
+        return {"LOW.DE": 10, "HIGH.DE": 1_000}
+
+    candidates = search_instruments(
+        "European ETF",
+        search_factory=lambda *args, **kwargs: FakeSearch(),
+        volume_loader=volume_loader,
+    )
+
+    assert [candidate.symbol for candidate in candidates] == [
+        "HIGH.DE",
+        "LOW.DE",
+    ]
+    assert volume_calls == [("LOW.DE", "HIGH.DE")]
+
+
+def test_fetch_average_daily_volumes_uses_one_batch_and_ignores_zeroes():
+    symbols = ("LOW.DE", "HIGH.DE")
+    columns = pd.MultiIndex.from_product(
+        [["Close", "Volume"], symbols],
+        names=["Price", "Ticker"],
+    )
+    history = pd.DataFrame(
+        [
+            [10.0, 20.0, 0.0, 1_000.0],
+            [11.0, 21.0, 100.0, 3_000.0],
+        ],
+        columns=columns,
+    )
+    calls = []
+
+    def downloader(requested_symbols, **kwargs):
+        calls.append((requested_symbols, kwargs))
+        return history
+
+    volumes = fetch_average_daily_volumes(
+        symbols,
+        downloader=downloader,
+    )
+
+    assert volumes == {"LOW.DE": 100.0, "HIGH.DE": 2_000.0}
+    assert calls[0][0] == ["LOW.DE", "HIGH.DE"]
+    assert calls[0][1]["period"] == "1mo"
 
 
 def test_search_instruments_maps_provider_failure_and_empty_results():
@@ -384,6 +508,47 @@ def test_custom_marts_match_dashboard_formulas():
     assert risk.iloc[-1]["annualized_vol_30d"] == pytest.approx(
         risk.iloc[-1]["rolling_vol_30d"] * np.sqrt(252)
     )
+
+
+def test_indexed_price_comparison_uses_first_shared_date_and_common_base():
+    prices = pd.DataFrame(
+        {
+            "ticker": ["AAA", "AAA", "AAA", "BBB", "BBB"],
+            "price_date": pd.to_datetime(
+                [
+                    "2026-01-01",
+                    "2026-01-02",
+                    "2026-01-03",
+                    "2026-01-02",
+                    "2026-01-03",
+                ]
+            ),
+            "adj_close": [10.0, 20.0, 30.0, 200.0, 100.0],
+        }
+    )
+
+    indexed = build_indexed_price_comparison(prices)
+
+    assert indexed["price_date"].min() == pd.Timestamp("2026-01-02")
+    first_values = indexed.groupby("ticker").head(1)
+    assert first_values["indexed_price"].tolist() == pytest.approx(
+        [100.0, 100.0]
+    )
+    final_values = indexed.groupby("ticker").tail(1).set_index("ticker")
+    assert final_values.loc["AAA", "indexed_price"] == pytest.approx(150.0)
+    assert final_values.loc["BBB", "indexed_price"] == pytest.approx(50.0)
+
+
+def test_indexed_price_comparison_returns_empty_without_shared_dates():
+    prices = pd.DataFrame(
+        {
+            "ticker": ["AAA", "BBB"],
+            "price_date": pd.to_datetime(["2026-01-01", "2026-01-02"]),
+            "adj_close": [10.0, 20.0],
+        }
+    )
+
+    assert build_indexed_price_comparison(prices).empty
 
 
 def test_session_add_remove_duplicate_and_limit_guards():
