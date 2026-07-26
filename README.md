@@ -2,9 +2,33 @@
 
 [![tests](https://github.com/aestim/etf-analytics/actions/workflows/test.yml/badge.svg)](https://github.com/aestim/etf-analytics/actions/workflows/test.yml)
 
-🔗 **Live app:** [etf-analytics-pipeline.streamlit.app](https://etf-analytics-pipeline.streamlit.app/) — refreshed after US trading days; the dashboard has a parquet fallback, while Ask uses the configured Postgres warehouse and Gemini API for historical data questions
+Turns distribution-adjusted ETF history into comparable performance/risk views
+and an educational base-currency portfolio simulator, without spreadsheet copies
+or mismatched metric definitions.
 
-Automated daily ingestion and analytics for a configurable **cross-asset ETF universe** (17 tickers by default: US large/small-cap, dividend, international developed & emerging equity, leveraged equity, Treasuries, credit, TIPS, gold, REITs). Reproducible raw → staging → mart pipeline, a multipage Streamlit app with a pytest-covered **Strategy Lab**, and a safety-gated **LLM-powered natural-language Q&A layer**. Formal golden-set evaluation is the remaining Q&A roadmap item.
+![ETF comparison dashboard](docs/images/dashboard-overview.png)
+
+🔗 **[Open the live demo](https://etf-analytics-pipeline.streamlit.app/)** —
+refreshed after US trading days, with a bundled fallback snapshot when the
+warehouse is unavailable.
+
+```mermaid
+flowchart LR
+    A["1 · Ingest<br/>Yahoo adjusted prices"] --> B["2 · Store<br/>Parquet + PostgreSQL"]
+    B --> C["3 · Transform<br/>dbt staging + marts"]
+    C --> D["4 · Serve<br/>Streamlit comparison + simulator"]
+```
+
+**Test suite:** 222 offline pytest tests + 17 dbt data tests.
+
+Key design decisions:
+
+- one versioned ticker universe in `config/etf_universe.txt` for local, Airflow,
+  and GitHub Actions runs;
+- one [Metric Contract](docs/metric-contract.md) for requested-period return,
+  volatility, maximum drawdown, and coverage;
+- generated SQL is constrained by table, column, and function allowlists, then
+  executed as a SELECT-only role in a read-only transaction.
 
 ## Start here if you are not technical
 
@@ -17,7 +41,7 @@ This project does four simple things:
 1. Downloads each ETF's daily market history.
 2. Cleans it and calculates return, price swings and the worst fall from a peak.
 3. Shows the results as charts and tables.
-4. Lets a person ask a Korean or English concept or data question, such as
+4. Optionally lets a person ask a Korean or English concept or data question, such as
    `양의 상관관계가 뭐야?` or `지난 1년 수익률이 가장 높은 ETF 3개는?`
 
 It is an educational comparison tool, **not** a prediction service or a request
@@ -44,9 +68,10 @@ flowchart LR
     C --> H["Table or<br/>line / bar / scatter chart"]
 ```
 
-The AI cannot write to the database and never runs generated Python code. It
-only proposes one read-only SQL query; ordinary code checks that query before
-execution.
+The optional AI layer never runs generated Python. It proposes one SQL query;
+ordinary code rejects it unless it reads an allowed mart table, uses documented
+columns and allowlisted functions, and stays within a row limit. PostgreSQL then
+executes it as `etf_reader` with `READ ONLY`, a fixed `search_path`, and a timeout.
 
 ## Business requirement
 
@@ -54,13 +79,13 @@ execution.
 
 ## Features
 
-- **Ingest** — yfinance daily prices (one batched request for the env-driven `ETF_TICKERS` universe), parquet landing zone + idempotent Postgres upsert; cloud runs use a 1-month overlap on weekdays and a 10-year monthly reconciliation
+- **Ingest** — yfinance daily adjusted prices (one batched request for `config/etf_universe.txt`, with an optional `ETF_TICKERS` override), parquet landing zone + idempotent Postgres upsert; missing Adjusted Close fails rather than silently substituting Close
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
-- **Data quality** — 17 dbt tests including an anomaly tripwire that warns if any daily return exceeds ±75%
+- **Data quality** — 17 dbt tests including an anomaly tripwire for ±75% daily returns and a freshness failure evaluated separately for every ticker
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
 - **Dashboard** — Streamlit multipage: English-first interface with a session-wide Korean switch, a compact ETF comparison selector, price/return/risk tabs, stable chart colors, optional reference guides, mobile-safe charts, and translated metric tooltips
 - **Session ETF lookup** — the comparison selector opens a responsive search dialog where visitors can search by ETF name, ISIN, or Yahoo Finance symbol and add one of up to five session listings in a single click; results default to most-traded ordering, generic `NASDAQ 100` searches also expand to UCITS listings and Invesco QQQ, share-class terms such as `Acc` stay respected, and partial Yahoo search failures retain successful candidates
-- **Strategy Lab** — a result-first custom ETF portfolio simulator with a compact strategy summary, dialog-based editing, optional second custom strategy, selectable example comparisons, and overview/growth/drawdown/details tabs; adjusted prices include ETF operating expenses and distributions, while pure pytest-covered functions keep calculations separate from the UI
+- **Strategy Lab** — a result-first educational strategy simulator with a compact summary, dialog-based editing, optional second custom strategy, selectable examples, pre-period SMA warm-up, and next-observation signal execution; costs and market microstructure are explicitly out of scope
 - **Ask** — Gemini routes English/Korean questions to a plain concept explanation, a safe historical-data query, or a refusal; answer tables and deterministic chart titles/axes follow the question language, and conclusion-first correlation summaries require no second LLM call
 - **Security** — dedicated read-only role (`etf_reader`, SELECT on marts only) for the Q&A layer
 - **Demo mode** — with no database reachable, dashboard pages use a bundled parquet fallback snapshot and recompute the marts in pandas; Ask can still explain concepts when Gemini is configured, while historical data questions wait for Postgres
@@ -70,7 +95,7 @@ execution.
 Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
 
 1. **Intent routing + Text-to-SQL** ✅ — one Gemini structured-output call returns `concept_question` with a beginner-friendly explanation, `data_query` with SQL, or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`); explicit historical windows up to 10 years override the 1-year default, and cross-ETF relationships work without naming a ticker — see [`qa/ask.py`](qa/ask.py)
-2. **Safety** ✅ — only `data_query` output reaches the SQL path. Generated SQL is parsed with sqlglot and rejected unless it is a single SELECT on whitelisted tables with columns that resolve against the documented mart schema, then executed as `etf_reader` with a row limit and timeout. Predictions, investment advice, unsupported causal claims and backtests are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
+2. **Safety** ✅ — only `data_query` output reaches the SQL path. Generated SQL is parsed with sqlglot and rejected unless it is one SELECT that reads at least one whitelisted table, resolves documented columns, and uses only allowlisted functions. It then runs as `etf_reader` in a `READ ONLY` transaction with a fixed `search_path`, row limit, and timeout. Predictions, investment advice, unsupported causal claims and simulations are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
 3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 4. **Provider resilience** ✅ — stable model IDs (`gemini-3.1-flash-lite` → `gemini-3.5-flash`), a 20-second request timeout, bounded 429/5xx retries, jitter, and model failover prevent an endless Ask spinner
 
@@ -104,7 +129,7 @@ etf-analytics/
 ├── data/raw/               # Local landing zone + bundled fallback snapshot
 ├── dbt/                    # staging & mart models · seeds/etf_info.csv · tests
 ├── airflow/dags/           # etf_pipeline DAG
-├── analytics/              # Pure strategy backtest functions (Strategy Lab)
+├── analytics/              # Pure educational strategy-simulation functions
 ├── dashboard/              # Streamlit app · shared i18n/data/color helpers · Strategy Lab · Ask
 ├── qa/                     # Structured scope/SQL, safety guard, presentation and eval runner
 └── tests/                  # pytest: ingest · analytics · dashboard · Ask · SQL guard
@@ -126,7 +151,7 @@ Wait until Airflow UI is available at http://localhost:8080 (default credentials
 ```bash
 python -m venv .venv          # skip if .venv already exists
 source .venv/bin/activate
-pip install -r ingest/requirements.txt -r dashboard/requirements.txt -r requirements-dev.txt
+pip install -r requirements-dev.txt -r airflow/requirements.txt
 ```
 
 ### 3. Run ingest (verify raw files)
@@ -177,7 +202,7 @@ Code validation: [`.github/workflows/test.yml`](.github/workflows/test.yml) — 
 every main push and pull request, runs the project pytest suite and a separate
 `dbt parse` job. Superseded runs on the same branch are cancelled.
 
-Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — fetches a trailing 1-month overlap on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build`. On the first day of each month it reconciles the full 10-year vendor window so historical split/distribution adjustments are corrected. It has read-only repository permission and never commits or pushes to `main`.
+Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — reads the shared `config/etf_universe.txt`, fetches a trailing 1-month overlap on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build`. On the first day of each month it reconciles the full 10-year vendor window so historical split/distribution adjustments are corrected. It has read-only repository permission and never commits or pushes to `main`.
 
 A manual dispatch can choose `fetch_period=1mo|10y`, or set `dbt_only=true` to
 rebuild cloud marts from the existing raw warehouse without fetching prices.
@@ -203,11 +228,11 @@ Postgres plan that fits the workload (free-tier limits and pricing may change):
 
 ## Data & limitations
 
-- Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is the primary price for all return math
+- Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is required for all return math, and ingest/session additions fail if the provider omits it
 - Visitor-added ETFs are session-only (maximum five) and are not written to Postgres/dbt or exposed to Ask. Search accepts a name, ISIN, or Yahoo Finance symbol, while the direct fallback accepts an exact Yahoo listing symbol (European listings commonly include suffixes such as `.DE`, `.L`, `.AS`, or `.VI`).
 - Yahoo search is best-effort: it may omit listings, mix share classes, or misclassify an ETF. The app ranks Yahoo's ETF-labelled candidates first but does not discard other fund types or claim an exact ISIN/share-class match. Users must choose the exchange listing themselves and verify it with their broker or issuer.
 - Custom-symbol validation requires usable daily price history and a Yahoo-reported USD, EUR or GBP quote currency. Overview defaults to base-currency returns (USD by default, with EUR and GBP options), converts prices with historical daily FX rates, and keeps each listing's local-currency return as an explicit secondary view. The app does not verify tax treatment or local investor eligibility.
-- Strategy Lab converts every adjusted price to the selected USD/EUR/GBP base currency before purchases, rebalancing and account values are calculated. Published ETF operating expenses and distributions are reflected in adjusted prices; trading fees, taxes, slippage, currency-conversion costs and idle-cash interest are not modeled, and example strategy signals are lagged one day (no look-ahead)
+- Strategy Lab converts every adjusted price to the selected USD/EUR/GBP base currency before purchases, rebalancing and account values are calculated. Published ETF operating expenses and distributions are reflected in adjusted prices; trading fees, taxes, slippage, currency-conversion costs and idle-cash interest are not modeled. The 200-day signal uses pre-period warm-up data, and close-based signals execute on the next available observation
 - Not investment advice; for portfolio demonstration and education only
 
 ## License

@@ -65,6 +65,8 @@ _METADATA_NUMERIC_COLUMNS = {
     "correlation",
     "count",
     "observations",
+    "price_observations",
+    "return_observations",
     "observation_count",
     "row_count",
     "rank",
@@ -96,8 +98,10 @@ _METRIC_PRIORITY = (
     "avg_daily_dollar_volume",
     "avg_daily_volume",
     "annualized_vol_30d",
+    "period_annualized_volatility",
     "rolling_vol_30d",
     "drawdown",
+    "period_max_drawdown",
     "daily_return",
     "adj_close",
     "close",
@@ -223,9 +227,11 @@ _KOREAN_LABELS = {
     "avg_daily_dollar_volume": "평균 일일 거래대금",
     "annualized_vol_30d": "30일 연환산 변동성",
     "avg_annualized_vol_30d": "평균 30일 연환산 변동성",
+    "period_annualized_volatility": "선택 기간 연환산 변동성",
     "rolling_vol_30d": "30일 가격 변동",
     "drawdown": "고점 대비 하락률",
     "max_drawdown": "최대 낙폭",
+    "period_max_drawdown": "선택 기간 최대 낙폭",
     "adj_close": "배당 반영 가격",
 }
 
@@ -240,9 +246,11 @@ _ENGLISH_LABELS = {
     "avg_daily_dollar_volume": "Average Daily Trading Value",
     "annualized_vol_30d": "Annualized 30-Day Price Swings",
     "avg_annualized_vol_30d": "Average Annualized 30-Day Price Swings",
+    "period_annualized_volatility": "Annualized Volatility over the Selected Period",
     "rolling_vol_30d": "30-Day Price Swings",
     "drawdown": "Drop from a Previous High",
     "max_drawdown": "Largest Drop",
+    "period_max_drawdown": "Largest Drop within the Selected Period",
     "adj_close": "Dividend-Adjusted Price",
 }
 
@@ -260,10 +268,11 @@ def _label(column: str, question: str = "") -> str:
 
 
 def _period_suffix(df: pd.DataFrame, question: str = "") -> str:
-    if "period_start" not in df.columns or "as_of_date" not in df.columns:
+    end_column = "period_end" if "period_end" in df.columns else "as_of_date"
+    if "period_start" not in df.columns or end_column not in df.columns:
         return ""
     starts = pd.to_datetime(df["period_start"], errors="coerce").dropna()
-    ends = pd.to_datetime(df["as_of_date"], errors="coerce").dropna()
+    ends = pd.to_datetime(df[end_column], errors="coerce").dropna()
     if starts.empty or ends.empty:
         return ""
     separator = "~" if _is_korean(question) else " to "

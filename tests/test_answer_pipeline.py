@@ -45,6 +45,46 @@ def test_answer_routes_and_generates_sql_in_one_model_call(
     assert len(direct_pipeline) == 1
 
 
+def test_run_readonly_sets_transaction_guards_before_query(monkeypatch):
+    commands = []
+    expected = pd.DataFrame({"ticker": ["SPY"]})
+
+    class FakeConnection:
+        def exec_driver_sql(self, command):
+            commands.append(command)
+
+    class FakeBegin:
+        def __enter__(self):
+            return FakeConnection()
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    class FakeEngine:
+        def begin(self):
+            return FakeBegin()
+
+    monkeypatch.setattr(ask, "_reader_engine", lambda: FakeEngine())
+
+    def read_sql(sql, connection):
+        commands.append(sql)
+        return expected
+
+    monkeypatch.setattr(ask.pd, "read_sql", read_sql)
+
+    result = ask.run_readonly(
+        "SELECT ticker FROM public_marts.dim_etf LIMIT 10"
+    )
+
+    assert result is expected
+    assert commands == [
+        "SET TRANSACTION READ ONLY",
+        "SET LOCAL search_path = pg_catalog",
+        f"SET LOCAL statement_timeout = {ask.STATEMENT_TIMEOUT_MS}",
+        "SELECT ticker FROM public_marts.dim_etf LIMIT 10",
+    ]
+
+
 def test_answer_uses_one_model_call_for_concept_without_database(
     monkeypatch, direct_pipeline
 ):

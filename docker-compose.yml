@@ -29,6 +29,7 @@ x-airflow-common: &airflow-common
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./ingest:/opt/airflow/ingest
+    - ./config:/opt/airflow/config:ro
     - ./dbt:/opt/airflow/dbt
     - ./dbt/profiles.yml.example:/opt/airflow/dbt/profiles.yml:ro
     - ./data:/opt/airflow/data

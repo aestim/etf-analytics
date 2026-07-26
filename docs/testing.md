@@ -8,7 +8,7 @@ that need a live data warehouse or an external provider.
 | Python unit and contract tests | `pytest -q` | ingest normalization/fail-loud behavior, analytics math, dashboard demo marts, Ask orchestration, SQL safety, retry/failover, chart selection/rendering | Offline, deterministic, and completes in a few seconds |
 | Static error checks | `ruff check --select E9,F63,F7,F82 .` | syntax errors, undefined names, and invalid control flow, including paths a unit test may not execute | Cheap complement to runtime tests |
 | dbt parse | `dbt deps && dbt parse` | model SQL, refs, macros, YAML tests, and project configuration compile correctly | No database or repository secrets required on pull requests |
-| dbt data tests | scheduled `Daily ETF ingest` when `POSTGRES_HOST` is configured | nulls, uniqueness, relationships, return anomaly bounds, and mart recency against real data | These assertions require a populated warehouse and cannot be replaced by parse |
+| dbt data tests | scheduled `Daily ETF ingest` when `POSTGRES_HOST` is configured | nulls, uniqueness, relationships, return anomaly bounds, and per-ticker mart recency against real data | These assertions require a populated warehouse and cannot be replaced by parse |
 | External ingest smoke test | scheduled `Daily ETF ingest` | Yahoo returns data for every configured ticker and the cloud raw table accepts the upsert; weekday 1-month and monthly 10-year windows exercise the same loader | Network-dependent by nature, so it is kept out of pull-request pytest |
 
 ## CI policy

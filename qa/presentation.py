@@ -18,6 +18,8 @@ PERCENT_METRIC_COLUMNS = frozenset(
         "ann_vol",
         "annualized_vol_30d",
         "rolling_vol_30d",
+        "period_annualized_volatility",
+        "period_max_drawdown",
     }
 )
 
@@ -47,9 +49,11 @@ METRIC_LABELS = {
     "avg_daily_dollar_volume": "average daily trading value (log scale)",
     "annualized_vol_30d": "annualized 30-day price swings",
     "avg_annualized_vol_30d": "average annualized 30-day price swings",
+    "period_annualized_volatility": "annualized volatility over the selected period",
     "rolling_vol_30d": "30-day price swings",
     "drawdown": "drop from a previous high",
     "max_drawdown": "largest drop",
+    "period_max_drawdown": "largest drop within the selected period",
     "adj_close": "dividend-adjusted price",
 }
 
@@ -63,9 +67,11 @@ KOREAN_METRIC_LABELS = {
     "avg_daily_dollar_volume": "평균 일일 거래대금",
     "annualized_vol_30d": "30일 연환산 변동성",
     "avg_annualized_vol_30d": "평균 30일 연환산 변동성",
+    "period_annualized_volatility": "선택 기간 연환산 변동성",
     "rolling_vol_30d": "30일 가격 변동",
     "drawdown": "고점 대비 하락률",
     "max_drawdown": "최대 낙폭",
+    "period_max_drawdown": "선택 기간 최대 낙폭",
     "adj_close": "배당 반영 가격",
 }
 
@@ -78,7 +84,10 @@ KOREAN_COLUMN_LABELS = {
     "price_date": "날짜",
     "period_start": "비교 시작일",
     "as_of_date": "비교 종료일",
+    "period_end": "비교 종료일",
     "observations": "사용한 날짜 수",
+    "price_observations": "가격 관측 수",
+    "return_observations": "수익률 관측 수",
     "correlation": "상관계수",
     "universe_scope": "비교 대상 범위",
     "volume": "거래량",
@@ -106,20 +115,22 @@ def display_column_label(column: str, question: str = "") -> str:
 
 
 def _period_text(df: pd.DataFrame) -> str:
-    if "period_start" not in df.columns or "as_of_date" not in df.columns:
+    end_column = "period_end" if "period_end" in df.columns else "as_of_date"
+    if "period_start" not in df.columns or end_column not in df.columns:
         return ""
     starts = pd.to_datetime(df["period_start"], errors="coerce").dropna()
-    ends = pd.to_datetime(df["as_of_date"], errors="coerce").dropna()
+    ends = pd.to_datetime(df[end_column], errors="coerce").dropna()
     if starts.empty or ends.empty:
         return ""
     return f" for {starts.min():%Y-%m-%d} to {ends.max():%Y-%m-%d}"
 
 
 def _korean_period_text(df: pd.DataFrame) -> str:
-    if "period_start" not in df.columns or "as_of_date" not in df.columns:
+    end_column = "period_end" if "period_end" in df.columns else "as_of_date"
+    if "period_start" not in df.columns or end_column not in df.columns:
         return ""
     starts = pd.to_datetime(df["period_start"], errors="coerce").dropna()
-    ends = pd.to_datetime(df["as_of_date"], errors="coerce").dropna()
+    ends = pd.to_datetime(df[end_column], errors="coerce").dropna()
     if starts.empty or ends.empty:
         return ""
     return f" ({starts.min():%Y-%m-%d}~{ends.max():%Y-%m-%d})"

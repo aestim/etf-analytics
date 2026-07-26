@@ -2,7 +2,7 @@
 
 import pytest
 
-from sql_guard import MAX_ROWS, GuardError, SchemaGuardError, validate
+from sql_guard import ALLOWED_FUNCTIONS, MAX_ROWS, GuardError, SchemaGuardError, validate
 
 OK = "SELECT ticker, adj_close FROM public_marts.mart_etf_returns WHERE ticker = 'TLT'"
 
@@ -36,6 +36,20 @@ def test_join_between_allowed_tables():
     assert "dim_etf" in validate(sql)
 
 
+def test_period_metric_functions_are_allowlisted():
+    sql = """
+        SELECT ticker,
+               STDDEV_SAMP(daily_return) * SQRT(252) AS period_vol,
+               MIN(price_date) AS period_start,
+               COUNT(*) AS price_observations
+        FROM public_marts.mart_etf_returns
+        GROUP BY ticker
+    """
+
+    assert {"STDDEV_SAMP", "SQRT", "MIN", "COUNT"} <= ALLOWED_FUNCTIONS
+    validate(sql)
+
+
 def test_cte_name_is_not_mistaken_for_table():
     sql = """
         WITH recent AS (
@@ -47,8 +61,20 @@ def test_cte_name_is_not_mistaken_for_table():
     validate(sql)  # must not raise GuardError
 
 
-def test_unqualified_allowed_table_passes():
-    validate("SELECT ticker FROM mart_etf_returns")
+def test_unqualified_table_is_rejected_for_safe_search_path():
+    with pytest.raises(GuardError, match="table not allowed"):
+        validate("SELECT ticker FROM mart_etf_returns")
+
+
+def test_only_pg_catalog_may_explicitly_qualify_an_allowlisted_function():
+    validate(
+        "SELECT pg_catalog.avg(leverage) FROM public_marts.dim_etf"
+    )
+
+    with pytest.raises(GuardError, match="function schema not allowed"):
+        validate(
+            "SELECT public_marts.avg(leverage) FROM public_marts.dim_etf"
+        )
 
 
 def test_wrong_join_alias_column_is_rejected_before_database_execution():
@@ -85,6 +111,35 @@ def test_writes_and_ddl_rejected(bad):
 def test_multiple_statements_rejected():
     with pytest.raises(GuardError, match="exactly one statement"):
         validate("SELECT 1; SELECT 2")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "SELECT 1",
+        "SELECT CURRENT_DATE",
+        "WITH constants AS (SELECT 1 AS value) SELECT value FROM constants",
+    ],
+)
+def test_select_without_an_allowed_table_is_rejected(bad):
+    with pytest.raises(GuardError, match="at least one allowed mart table"):
+        validate(bad)
+
+
+@pytest.mark.parametrize(
+    "function_call",
+    [
+        "pg_sleep(1)",
+        "pg_notify('channel', 'message')",
+        "lo_create(0)",
+        "pg_catalog.pg_sleep(1)",
+    ],
+)
+def test_side_effect_and_delay_functions_are_rejected(function_call):
+    sql = f"SELECT {function_call} FROM public_marts.dim_etf"
+
+    with pytest.raises(GuardError, match="function not allowed"):
+        validate(sql)
 
 
 def test_piggyback_after_select_rejected():

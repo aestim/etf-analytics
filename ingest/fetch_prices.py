@@ -17,12 +17,33 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
-# Defaults mirror .env.example (17-ticker cross-asset universe, 10y window)
-DEFAULT_TICKERS = "SGOV,VGIT,TLT,BND,LQD,HYG,TIP,SPY,QQQ,QLD,TQQQ,VEA,SCHD,VWO,IWM,VNQ,GLD"
-TICKERS = [t.strip() for t in os.getenv("ETF_TICKERS", DEFAULT_TICKERS).split(",") if t.strip()]
+UNIVERSE_FILE = ROOT / "config" / "etf_universe.txt"
 _raw = Path(os.getenv("RAW_DATA_DIR", ROOT / "data" / "raw"))
 RAW_DIR = _raw if _raw.is_absolute() else ROOT / _raw
 PERIOD = os.getenv("FETCH_PERIOD", "10y")
+
+
+def configured_tickers() -> list[str]:
+    """Load the universe from one shared file, with an explicit env override."""
+
+    configured = os.getenv("ETF_TICKERS", "").strip()
+    if configured:
+        tickers = [value.strip().upper() for value in configured.split(",")]
+    else:
+        if not UNIVERSE_FILE.exists():
+            raise RuntimeError(f"Ticker universe file is missing: {UNIVERSE_FILE}")
+        tickers = [
+            line.strip().upper()
+            for line in UNIVERSE_FILE.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    unique_tickers = list(dict.fromkeys(ticker for ticker in tickers if ticker))
+    if not unique_tickers:
+        raise RuntimeError("ETF ticker universe is empty")
+    return unique_tickers
+
+
+TICKERS = configured_tickers()
 
 
 def _normalize_history(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
@@ -33,8 +54,15 @@ def _normalize_history(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         "adj_close": "adj_close",
     }
     df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-    if "adj_close" not in df.columns and "close" in df.columns:
-        df["adj_close"] = df["close"]
+    if "adj_close" not in df.columns:
+        raise RuntimeError(
+            f"{ticker}: Yahoo response has no Adjusted Close column; "
+            "refusing to substitute unadjusted Close"
+        )
+    df["adj_close"] = pd.to_numeric(df["adj_close"], errors="coerce")
+    df = df.dropna(subset=["adj_close"])
+    if df.empty:
+        raise RuntimeError(f"{ticker}: Adjusted Close contains no usable values")
     df["ticker"] = ticker
     df["price_date"] = pd.to_datetime(df["price_date"]).dt.date
     df["_ingested_at"] = datetime.now(timezone.utc)

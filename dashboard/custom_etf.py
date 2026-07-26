@@ -630,8 +630,7 @@ def normalize_price_history(
     if date_column is None:
         raise PriceDataUnavailableError(normalized_ticker)
 
-    adjusted_column = "adj_close" if "adj_close" in frame else "close"
-    if adjusted_column not in frame:
+    if "adj_close" not in frame:
         raise PriceDataUnavailableError(normalized_ticker)
 
     result = pd.DataFrame()
@@ -640,7 +639,7 @@ def normalize_price_history(
         dates = dates.dt.tz_localize(None)
     result["price_date"] = dates.dt.normalize()
     result["adj_close"] = pd.to_numeric(
-        frame[adjusted_column], errors="coerce"
+        frame["adj_close"], errors="coerce"
     ).to_numpy()
     if "volume" in frame:
         result["volume"] = pd.to_numeric(frame["volume"], errors="coerce").to_numpy()

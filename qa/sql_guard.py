@@ -2,9 +2,10 @@
 Week 2 (2/3): SQL safety layer 1 — an X-ray check without execution (sqlglot).
 
 Principle: never trust LLM output. This file is layer 1 of a 3-layer defence:
-  Layer 1 (here)     sqlglot parse: single SELECT · whitelisted tables · forced LIMIT
-  Layer 2 (ask.py)   execute only as etf_reader (read-only role) — even if layer 1
-                     were bypassed, writes are impossible
+  Layer 1 (here)     sqlglot parse: single SELECT · whitelisted tables/functions
+                     · documented columns · forced LIMIT
+  Layer 2 (ask.py)   execute as etf_reader inside READ ONLY transaction with a
+                     fixed search_path
   Layer 3 (ask.py)   statement_timeout — kills runaway queries
 
 Why a parse-tree check instead of string matching (e.g. searching for
@@ -36,6 +37,48 @@ _FORBIDDEN_NAMES = (
 )
 FORBIDDEN_NODES = tuple(getattr(exp, n) for n in _FORBIDDEN_NAMES if hasattr(exp, n))
 
+# PostgreSQL SELECT expressions can call functions with side effects. This is
+# deliberately an allowlist rather than a blacklist: adding a generated-query
+# capability requires an explicit code review and a regression test.
+ALLOWED_FUNCTIONS = frozenset(
+    {
+        "ABS",
+        "AND",
+        "AVG",
+        "CAST",
+        "CEIL",
+        "COALESCE",
+        "CORR",
+        "COUNT",
+        "CURRENT_DATE",
+        "DATE_TRUNC",
+        "EXP",
+        "EXTRACT",
+        "FIRST_VALUE",
+        "FLOOR",
+        "GREATEST",
+        "IF",
+        "LAG",
+        "LAST_VALUE",
+        "LEAD",
+        "LEAST",
+        "LN",
+        "LOG",
+        "MAX",
+        "MIN",
+        "NULLIF",
+        "OR",
+        "POWER",
+        "ROUND",
+        "ROW_NUMBER",
+        "SQRT",
+        "STDDEV_SAMP",
+        "SUM",
+        # sqlglot normalizes PostgreSQL DATE_TRUNC to this AST function name.
+        "TIMESTAMP_TRUNC",
+    }
+)
+
 
 class GuardError(ValueError):
     """Rejection reason — phrased so it can be shown to the user as-is."""
@@ -53,9 +96,10 @@ def validate(sql: str) -> str:
       2. exactly one statement
       3. top level is a SELECT (SELECT INTO rejected too)
       4. no write/DDL nodes anywhere in the tree (subqueries included)
-      5. every referenced table is whitelisted (CTE names exempt)
-      6. referenced columns resolve against the documented mart schema
-      7. LIMIT forced to MAX_ROWS when missing or larger
+      5. at least one real whitelisted table is referenced (CTE names exempt)
+      6. every called function is explicitly allowlisted
+      7. referenced columns resolve against the documented mart schema
+      8. LIMIT forced to MAX_ROWS when missing or larger
     """
     try:
         statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
@@ -76,15 +120,34 @@ def validate(sql: str) -> str:
             raise GuardError(f"forbidden clause: {node.key.upper()}")
 
     cte_names = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
+    real_table_count = 0
     for table in tree.find_all(exp.Table):
         name, schema = table.name, table.db
         if name in cte_names and not schema:
             continue  # names defined in a WITH clause are not real tables
-        if schema not in ("", SCHEMA_NAME) or name not in ALLOWED_TABLES:
+        if schema != SCHEMA_NAME or name not in ALLOWED_TABLES:
             shown = f"{schema}.{name}" if schema else name
             raise GuardError(
                 f"table not allowed: {shown} (allowed: {SCHEMA_NAME}.{{{', '.join(ALLOWED_TABLES)}}})"
             )
+        real_table_count += 1
+
+    if real_table_count == 0:
+        raise GuardError("query must read from at least one allowed mart table")
+
+    for function in tree.find_all(exp.Func):
+        if isinstance(function.parent, exp.Dot):
+            function_schema = function.parent.this.sql(dialect="postgres")
+            if function_schema.lower() != "pg_catalog":
+                raise GuardError(f"function schema not allowed: {function_schema}")
+        name = (
+            function.name
+            if isinstance(function, exp.Anonymous)
+            else function.sql_name()
+        )
+        normalized_name = str(name).upper()
+        if normalized_name not in ALLOWED_FUNCTIONS:
+            raise GuardError(f"function not allowed: {normalized_name}")
 
     # Validate a copy: qualification expands stars and rewrites aliases, while
     # execution should retain the generated SQL apart from the forced LIMIT.

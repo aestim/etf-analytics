@@ -593,6 +593,16 @@ def test_normalize_history_handles_yfinance_multiindex_for_european_symbol():
     assert pd.api.types.is_datetime64_any_dtype(result["price_date"])
 
 
+def test_normalize_history_rejects_close_only_response():
+    raw = pd.DataFrame(
+        {"Close": np.linspace(100.0, 134.0, 35)},
+        index=pd.bdate_range("2026-01-01", periods=35, name="Date"),
+    )
+
+    with pytest.raises(PriceDataUnavailableError):
+        normalize_price_history(raw, "VWCE.DE")
+
+
 def test_fetch_price_history_uses_injected_downloader():
     dates = pd.bdate_range("2026-01-01", periods=35)
     raw = pd.DataFrame(

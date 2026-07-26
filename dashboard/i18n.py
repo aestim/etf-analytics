@@ -516,8 +516,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "무한매수법 · TQQQ",
     },
     "strategy.split_note": {
-        "en": "Split capital into 40 daily buys and sell all at 10% above average cost. Each cycle's gain is capped, while crash risk remains after cash runs out.",
-        "ko": "돈을 40번으로 나눠 매일 사고 평균 매수가보다 10% 오르면 전부 팝니다. 한 번의 상승 이익은 제한되지만 현금을 다 쓴 뒤의 큰 하락 위험은 남습니다.",
+        "en": "Split capital into 40 daily buys. A close at least 10% above average cost schedules a full sale for the next available observation; it never assumes a sale and repurchase at that same close. Crash risk remains after cash runs out.",
+        "ko": "돈을 40번으로 나눠 매일 삽니다. 종가가 평균 매수가보다 10% 이상 높으면 다음 관측일에 전량 매도하며, 같은 종가에 매도와 재매수를 동시에 했다고 가정하지 않습니다. 현금을 다 쓴 뒤의 큰 하락 위험은 남습니다.",
     },
     "strategy.log_scale": {
         "en": "Make large differences easier to compare (log scale)",
@@ -816,8 +816,8 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "계산에 사용한 가정",
     },
     "simulation.assumptions_body": {
-        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits.\n- Every listing price is converted to the selected base currency with historical daily FX rates before portfolio calculations.\n- Fractional shares are allowed and idle cash earns 0%.\n- During staged entry, yearly rebalancing only adjusts money already invested; reserved cash follows the selected purchase schedule.\n- Trading fees, taxes, slippage and currency-conversion costs are excluded.\n- This is a historical educational simulation, not a forecast or recommendation.",
-        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있습니다.\n- 포트폴리오를 계산하기 전에 모든 상장 가격을 과거 일별 환율로 선택한 기준통화로 변환합니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 나눠 투자하는 동안 리밸런싱은 이미 투자된 금액에만 적용하며, 남은 현금은 정한 매수 일정에 따라 투자합니다.\n- 거래 수수료, 세금, 매수·매도 가격 차이 및 환전 비용은 제외합니다.\n- 과거 데이터를 이용한 학습용 시뮬레이션이며 미래 예측이나 투자 추천이 아닙니다.",
+        "en": "- Dividend-adjusted historical prices already reflect ETF operating expenses, dividends, and stock splits; a listing without adjusted prices is rejected.\n- Every listing price is converted to the selected base currency with historical daily FX rates before portfolio calculations.\n- Fractional shares are allowed and idle cash earns 0%.\n- The 200-day trend uses pre-period history for indicator warm-up. A close-based signal is executed on the next available observation.\n- During staged entry, yearly rebalancing only adjusts money already invested; reserved cash follows the selected purchase schedule.\n- Volatility is annualized from the number of aligned observations per calendar year, which matters when US and European calendars are mixed.\n- Trading fees, taxes, slippage and currency-conversion costs are excluded.\n- This is a historical educational strategy simulator, not a quant-grade execution model, forecast, or recommendation.",
+        "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있으며 조정 가격이 없는 상장 종목은 거부합니다.\n- 포트폴리오를 계산하기 전에 모든 상장 가격을 과거 일별 환율로 선택한 기준통화로 변환합니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 200일 추세 지표는 비교 시작 전 데이터를 워밍업에 사용하고, 종가로 확인한 신호는 다음 관측일에 체결합니다.\n- 나눠 투자하는 동안 리밸런싱은 이미 투자된 금액에만 적용하며, 남은 현금은 정한 매수 일정에 따라 투자합니다.\n- 미국과 유럽 거래일이 섞일 수 있으므로 실제 공통 관측일의 연간 빈도로 변동성을 연환산합니다.\n- 거래 수수료, 세금, 슬리피지 및 환전 비용은 제외합니다.\n- 과거 데이터를 이용한 학습용 전략 시뮬레이터이며 퀀트급 체결 모형, 미래 예측 또는 투자 추천이 아닙니다.",
     },
     "ask.title": {"en": "💬 Ask About ETFs", "ko": "💬 ETF 정보 물어보기"},
     "ask.subtitle": {

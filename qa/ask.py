@@ -72,6 +72,7 @@ def _advance_model() -> bool:
 
 
 STATEMENT_TIMEOUT_MS = 5000  # defence layer 3: kill runaway queries
+SAFE_SEARCH_PATH = "pg_catalog"
 
 
 class SqlAnswer(BaseModel):
@@ -147,29 +148,80 @@ FEW_SHOTS = f"""
 Example 1
 Q: 지난 1년 TLT 변동성 어땠어?
 Intent: data_query
-SQL: SELECT price_date, rolling_vol_30d
-     FROM public_marts.mart_etf_risk_metrics
-     WHERE ticker = 'TLT' AND price_date >= CURRENT_DATE - INTERVAL '1 year'
-     ORDER BY price_date
+SQL: WITH period_prices AS (
+         SELECT ticker, price_date, adj_close
+         FROM public_marts.mart_etf_returns
+         WHERE ticker = 'TLT'
+           AND price_date >= CURRENT_DATE - INTERVAL '1 year'
+     ),
+     period_rows AS (
+         SELECT *,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     )
+     SELECT ticker,
+            MIN(price_date) AS period_start,
+            MAX(price_date) AS period_end,
+            COUNT(*) AS price_observations,
+            COUNT(period_daily_return) AS return_observations,
+            STDDEV_SAMP(period_daily_return) * SQRT(252)
+                AS period_annualized_volatility
+     FROM period_rows
+     GROUP BY ticker
 
 Example 2
 Q: Which long-term treasury ETF had the lowest volatility this year?
 Intent: data_query
-SQL: SELECT r.ticker, AVG(r.rolling_vol_30d) AS avg_daily_vol
-     FROM public_marts.mart_etf_risk_metrics AS r
-     JOIN public_marts.dim_etf AS d ON r.ticker = d.ticker
-     WHERE d.sub_class = 'treasury_long'
-       AND r.price_date >= DATE_TRUNC('year', CURRENT_DATE)
-     GROUP BY r.ticker
-     ORDER BY avg_daily_vol ASC
+SQL: WITH period_prices AS (
+         SELECT p.ticker, p.price_date, p.adj_close
+         FROM public_marts.mart_etf_returns AS p
+         JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
+         WHERE d.sub_class = 'treasury_long'
+           AND p.price_date >= DATE_TRUNC('year', CURRENT_DATE)
+     ),
+     period_rows AS (
+         SELECT *,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     )
+     SELECT ticker,
+            MIN(price_date) AS period_start,
+            MAX(price_date) AS period_end,
+            COUNT(*) AS price_observations,
+            COUNT(period_daily_return) AS return_observations,
+            STDDEV_SAMP(period_daily_return) * SQRT(252)
+                AS period_annualized_volatility
+     FROM period_rows
+     GROUP BY ticker
+     ORDER BY period_annualized_volatility ASC
 
 Example 3
 Q: 올해 수익률 좋은 ETF 5개는?
 Intent: data_query
-SQL: SELECT ticker, EXP(SUM(LN(1 + daily_return))) - 1 AS ytd_return
-     FROM public_marts.mart_etf_returns
-     WHERE price_date >= DATE_TRUNC('year', CURRENT_DATE)
-       AND daily_return IS NOT NULL
+SQL: WITH period_rows AS (
+         SELECT ticker,
+                price_date,
+                FIRST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) AS first_price,
+                LAST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) AS last_price
+         FROM public_marts.mart_etf_returns
+         WHERE price_date >= DATE_TRUNC('year', CURRENT_DATE)
+     )
+     SELECT ticker,
+            MIN(price_date) AS period_start,
+            MAX(price_date) AS period_end,
+            COUNT(*) AS price_observations,
+            COUNT(*) - 1 AS return_observations,
+            MAX(last_price / first_price - 1) AS ytd_return
+     FROM period_rows
      GROUP BY ticker
      ORDER BY ytd_return DESC
      LIMIT 5
@@ -177,96 +229,146 @@ SQL: SELECT ticker, EXP(SUM(LN(1 + daily_return))) - 1 AS ytd_return
 Example 4
 Q: 가장 수익률 높은 ETF 3개 보여줘
 Intent: data_query
-SQL: SELECT ticker,
+SQL: WITH period_rows AS (
+         SELECT ticker,
+                price_date,
+                FIRST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) AS first_price,
+                LAST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) AS last_price
+         FROM public_marts.mart_etf_returns
+         WHERE price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RETURN_LOOKBACK}'
+     )
+     SELECT ticker,
             MIN(price_date) AS period_start,
-            MAX(price_date) AS as_of_date,
-            COUNT(daily_return) AS observations,
-            EXP(SUM(LN(1 + daily_return))) - 1 AS cumulative_return
-     FROM public_marts.mart_etf_returns
-     WHERE price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RETURN_LOOKBACK}'
-       AND daily_return IS NOT NULL
+            MAX(price_date) AS period_end,
+            COUNT(*) AS price_observations,
+            COUNT(*) - 1 AS return_observations,
+            MAX(last_price / first_price - 1) AS cumulative_return
+     FROM period_rows
      GROUP BY ticker
-     HAVING COUNT(daily_return) >= {MIN_DEFAULT_RETURN_OBSERVATIONS}
+     HAVING COUNT(*) - 1 >= {MIN_DEFAULT_RETURN_OBSERVATIONS}
      ORDER BY cumulative_return DESC
      LIMIT 3
 
 Example 5
 Q: 레버리지 배수와 연환산 변동성의 상관관계는?
 Intent: data_query
-SQL: WITH per_etf AS (
-         SELECT d.ticker,
-                d.leverage::double precision AS leverage,
-                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
-                MIN(r.price_date) AS period_start,
-                MAX(r.price_date) AS as_of_date,
-                COUNT(r.annualized_vol_30d) AS observations
-         FROM public_marts.mart_etf_risk_metrics AS r
-         JOIN public_marts.dim_etf AS d ON r.ticker = d.ticker
-         WHERE r.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
-           AND r.annualized_vol_30d IS NOT NULL
-         GROUP BY d.ticker, d.leverage
-         HAVING COUNT(r.annualized_vol_30d) >= {MIN_RELATIONSHIP_OBSERVATIONS}
+SQL: WITH period_prices AS (
+         SELECT p.ticker, p.price_date, p.adj_close,
+                d.leverage::double precision AS leverage
+         FROM public_marts.mart_etf_returns AS p
+         JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
+         WHERE p.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+     ),
+     period_rows AS (
+         SELECT *,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     ),
+     per_etf AS (
+         SELECT ticker,
+                leverage,
+                STDDEV_SAMP(period_daily_return) * SQRT(252)
+                    AS period_annualized_volatility,
+                MIN(price_date) AS period_start,
+                MAX(price_date) AS period_end,
+                COUNT(*) AS price_observations,
+                COUNT(period_daily_return) AS return_observations
+         FROM period_rows
+         GROUP BY ticker, leverage
+         HAVING COUNT(period_daily_return) >= {MIN_RELATIONSHIP_OBSERVATIONS}
      )
      SELECT *,
             'the current ETF warehouse universe including leveraged funds'
                 AS universe_scope,
-            CORR(leverage, avg_annualized_vol_30d) OVER () AS correlation
+            CORR(leverage, period_annualized_volatility) OVER () AS correlation
      FROM per_etf
      ORDER BY leverage, ticker
 
 Example 6
 Q: 거래량과 변동성 사이에 관계가 있나?
 Intent: data_query
-SQL: WITH per_etf AS (
-         SELECT p.ticker,
-                AVG(p.volume * p.adj_close)::double precision AS avg_daily_dollar_volume,
-                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
-                MIN(p.price_date) AS period_start,
-                MAX(p.price_date) AS as_of_date,
-                COUNT(r.annualized_vol_30d) AS observations
+SQL: WITH period_prices AS (
+         SELECT p.ticker, p.price_date, p.adj_close, p.volume
          FROM public_marts.mart_etf_returns AS p
-         JOIN public_marts.mart_etf_risk_metrics AS r
-           ON p.ticker = r.ticker AND p.price_date = r.price_date
          JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
          WHERE p.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
            AND d.leverage = 1
            AND p.volume IS NOT NULL
-           AND p.adj_close IS NOT NULL
-           AND r.annualized_vol_30d IS NOT NULL
-         GROUP BY p.ticker
-         HAVING COUNT(r.annualized_vol_30d) >= {MIN_RELATIONSHIP_OBSERVATIONS}
+     ),
+     period_rows AS (
+         SELECT *,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     ),
+     per_etf AS (
+         SELECT ticker,
+                AVG(p.volume * p.adj_close)::double precision AS avg_daily_dollar_volume,
+                STDDEV_SAMP(period_daily_return) * SQRT(252)
+                    AS period_annualized_volatility,
+                MIN(price_date) AS period_start,
+                MAX(price_date) AS period_end,
+                COUNT(*) AS price_observations,
+                COUNT(period_daily_return) AS return_observations
+         FROM period_rows AS p
+         GROUP BY ticker
+         HAVING COUNT(period_daily_return) >= {MIN_RELATIONSHIP_OBSERVATIONS}
      )
      SELECT *,
             'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
             CORR(LN(NULLIF(avg_daily_dollar_volume, 0)),
-                 avg_annualized_vol_30d) OVER () AS correlation
+                 period_annualized_volatility) OVER () AS correlation
      FROM per_etf
      ORDER BY avg_daily_dollar_volume, ticker
 
 Example 7
 Q: How do return performance and volatility move together across ETFs?
 Intent: data_query
-SQL: WITH per_etf AS (
-         SELECT r.ticker,
-                EXP(SUM(LN(1 + r.daily_return))) - 1 AS cumulative_return,
-                AVG(m.annualized_vol_30d) AS avg_annualized_vol_30d,
-                MIN(r.price_date) AS period_start,
-                MAX(r.price_date) AS as_of_date,
-                COUNT(r.daily_return) AS observations
-         FROM public_marts.mart_etf_returns AS r
-         JOIN public_marts.mart_etf_risk_metrics AS m
-           ON r.ticker = m.ticker AND r.price_date = m.price_date
-         JOIN public_marts.dim_etf AS d ON r.ticker = d.ticker
-         WHERE r.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
+SQL: WITH period_prices AS (
+         SELECT p.ticker, p.price_date, p.adj_close
+         FROM public_marts.mart_etf_returns AS p
+         JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
+         WHERE p.price_date >= CURRENT_DATE - INTERVAL '{DEFAULT_RELATIONSHIP_LOOKBACK}'
            AND d.leverage = 1
-           AND r.daily_return IS NOT NULL
-           AND m.annualized_vol_30d IS NOT NULL
-         GROUP BY r.ticker
-         HAVING COUNT(r.daily_return) >= {MIN_RELATIONSHIP_OBSERVATIONS}
+     ),
+     period_rows AS (
+         SELECT *,
+                FIRST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) AS first_price,
+                LAST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) AS last_price,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     ),
+     per_etf AS (
+         SELECT ticker,
+                MAX(last_price / first_price - 1) AS cumulative_return,
+                STDDEV_SAMP(period_daily_return) * SQRT(252)
+                    AS period_annualized_volatility,
+                MIN(price_date) AS period_start,
+                MAX(price_date) AS period_end,
+                COUNT(*) AS price_observations,
+                COUNT(period_daily_return) AS return_observations
+         FROM period_rows
+         GROUP BY ticker
+         HAVING COUNT(period_daily_return) >= {MIN_RELATIONSHIP_OBSERVATIONS}
      )
      SELECT *,
             'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
-            CORR(cumulative_return, avg_annualized_vol_30d) OVER () AS correlation
+            CORR(cumulative_return, period_annualized_volatility) OVER () AS correlation
      FROM per_etf
      ORDER BY cumulative_return DESC
 
@@ -274,29 +376,38 @@ Example 8
 Q: Over the past 10 years, have ETFs with higher average trading volume
    generally had higher annualized volatility?
 Intent: data_query
-SQL: WITH per_etf AS (
-         SELECT p.ticker,
-                AVG(p.volume * p.adj_close)::double precision AS avg_daily_dollar_volume,
-                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
-                MIN(p.price_date) AS period_start,
-                MAX(p.price_date) AS as_of_date,
-                COUNT(r.annualized_vol_30d) AS observations
+SQL: WITH period_prices AS (
+         SELECT p.ticker, p.price_date, p.adj_close, p.volume
          FROM public_marts.mart_etf_returns AS p
-         JOIN public_marts.mart_etf_risk_metrics AS r
-           ON p.ticker = r.ticker AND p.price_date = r.price_date
          JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
          WHERE p.price_date >= CURRENT_DATE - INTERVAL '10 years'
            AND d.leverage = 1
            AND p.volume IS NOT NULL
-           AND p.adj_close IS NOT NULL
-           AND r.annualized_vol_30d IS NOT NULL
-         GROUP BY p.ticker
-         HAVING COUNT(r.annualized_vol_30d) >= 2000
+     ),
+     period_rows AS (
+         SELECT *,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     ),
+     per_etf AS (
+         SELECT ticker,
+                AVG(p.volume * p.adj_close)::double precision AS avg_daily_dollar_volume,
+                STDDEV_SAMP(period_daily_return) * SQRT(252)
+                    AS period_annualized_volatility,
+                MIN(price_date) AS period_start,
+                MAX(price_date) AS period_end,
+                COUNT(*) AS price_observations,
+                COUNT(period_daily_return) AS return_observations
+         FROM period_rows AS p
+         GROUP BY ticker
+         HAVING COUNT(period_daily_return) >= 2000
      )
      SELECT *,
             'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
             CORR(LN(NULLIF(avg_daily_dollar_volume, 0)),
-                 avg_annualized_vol_30d) OVER () AS correlation
+                 period_annualized_volatility) OVER () AS correlation
      FROM per_etf
      ORDER BY avg_daily_dollar_volume, ticker
 
@@ -304,33 +415,77 @@ Example 9
 Q: Among unleveraged ETFs, what is the relationship between 10-year CAGR
    and annualized volatility?
 Intent: data_query
-SQL: WITH per_etf AS (
-         SELECT p.ticker,
-                POWER(EXP(SUM(LN(1 + p.daily_return))),
-                      365.25 / NULLIF(MAX(p.price_date) - MIN(p.price_date), 0)) - 1
-                    AS cagr,
-                AVG(r.annualized_vol_30d) AS avg_annualized_vol_30d,
-                MIN(p.price_date) AS period_start,
-                MAX(p.price_date) AS as_of_date,
-                COUNT(p.daily_return) AS observations
+SQL: WITH period_prices AS (
+         SELECT p.ticker, p.price_date, p.adj_close
          FROM public_marts.mart_etf_returns AS p
-         JOIN public_marts.mart_etf_risk_metrics AS r
-           ON p.ticker = r.ticker AND p.price_date = r.price_date
          JOIN public_marts.dim_etf AS d ON p.ticker = d.ticker
          WHERE p.price_date >= CURRENT_DATE - INTERVAL '10 years'
            AND d.leverage = 1
-           AND p.daily_return IS NOT NULL
-           AND r.annualized_vol_30d IS NOT NULL
-         GROUP BY p.ticker
-         HAVING COUNT(p.daily_return) >= 2000
+     ),
+     period_rows AS (
+         SELECT *,
+                FIRST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) AS first_price,
+                LAST_VALUE(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) AS last_price,
+                adj_close / LAG(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                ) - 1 AS period_daily_return
+         FROM period_prices
+     ),
+     per_etf AS (
+         SELECT ticker,
+                POWER(
+                    MAX(last_price / first_price),
+                    365.25 / NULLIF(MAX(price_date) - MIN(price_date), 0)
+                ) - 1
+                    AS cagr,
+                STDDEV_SAMP(period_daily_return) * SQRT(252)
+                    AS period_annualized_volatility,
+                MIN(price_date) AS period_start,
+                MAX(price_date) AS period_end,
+                COUNT(*) AS price_observations,
+                COUNT(period_daily_return) AS return_observations
+         FROM period_rows
+         GROUP BY ticker
+         HAVING COUNT(period_daily_return) >= 2000
      )
      SELECT *,
             'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
-            CORR(cagr, avg_annualized_vol_30d) OVER () AS correlation
+            CORR(cagr, period_annualized_volatility) OVER () AS correlation
      FROM per_etf
      ORDER BY cagr DESC, ticker
 
 Example 10
+Q: 지난 1년 SPY 최대 낙폭은?
+Intent: data_query
+SQL: WITH period_prices AS (
+         SELECT ticker, price_date, adj_close
+         FROM public_marts.mart_etf_returns
+         WHERE ticker = 'SPY'
+           AND price_date >= CURRENT_DATE - INTERVAL '1 year'
+     ),
+     period_rows AS (
+         SELECT *,
+                MAX(adj_close) OVER (
+                    PARTITION BY ticker ORDER BY price_date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS period_peak
+         FROM period_prices
+     )
+     SELECT ticker,
+            MIN(price_date) AS period_start,
+            MAX(price_date) AS period_end,
+            COUNT(*) AS price_observations,
+            COUNT(*) - 1 AS return_observations,
+            MIN(adj_close / period_peak - 1) AS period_max_drawdown
+     FROM period_rows
+     GROUP BY ticker
+
+Example 11
 Q: 양의 상관관계가 뭐야?
 Intent: concept_question
 SQL: ""
@@ -338,7 +493,7 @@ Explanation: 양의 상관관계는 두 값이 대체로 같은 방향으로 움
              한 값이 높을 때 다른 값도 높은 경향이 있지만, 이것만으로 한 값이
              다른 값의 원인이라고 판단할 수는 없습니다.
 
-Example 11
+Example 12
 Q: Why do bond prices generally fall when interest rates rise?
 Intent: concept_question
 SQL: ""
@@ -347,7 +502,7 @@ Explanation: Existing bonds become less attractive when new bonds offer higher
              Longer-term bonds are usually more sensitive, but not every bond ETF
              moves by the same amount.
 
-Example 12
+Example 13
 Q: TQQQ 지금 사도 돼?
 Intent: out_of_scope
 SQL: ""
@@ -396,16 +551,23 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
 - Map plain-language groups (e.g. "미국 장기채", "leveraged") to dim_etf
   asset_class / sub_class values from the universe list.
 - Return at most {MAX_ROWS} rows; prefer ORDER BY that makes the table readable.
+- The Metric Contract in the database-schema section is authoritative. For an
+  aggregated requested-period metric, filter adjusted prices first and only
+  then calculate LAG returns and the running period peak. Never average a
+  rolling-volatility column to represent period volatility, and never take
+  MIN(drawdown) from the risk mart to represent period maximum drawdown.
 - If a return/performance ranking omits a period, use the trailing
   {DEFAULT_RETURN_LOOKBACK}; this is a DEFAULT LOOKBACK, not a ban on explicit
   shorter periods such as today, MTD or 3 months.
 - For that default trailing-{DEFAULT_RETURN_LOOKBACK} ranking, return ticker,
-  MIN(price_date) AS period_start, MAX(price_date) AS as_of_date,
-  COUNT(daily_return) AS observations, and the compounded return. Require
-  HAVING COUNT(daily_return) >= {MIN_DEFAULT_RETURN_OBSERVATIONS} so ETFs with
+  period_start, period_end, price_observations, return_observations, and
+  last in-window adjusted price / first in-window adjusted price - 1. Require
+  at least {MIN_DEFAULT_RETURN_OBSERVATIONS} in-window returns so ETFs with
   incomplete history are not ranked against full-period observations.
-- rolling_vol_30d is DAILY volatility; use annualized_vol_30d when the question
-  asks for "annual" / "연" volatility (they are the same series × sqrt(252)).
+- rolling_vol_30d and annualized_vol_30d are only for an as-of snapshot or a
+  rolling time series. A requested-period volatility is
+  STDDEV_SAMP(period_daily_return) * SQRT(252), where period_daily_return is
+  recomputed after filtering adjusted prices to the requested dates.
 - For liquidity comparisons across ETFs, plain "volume" / "거래량" means daily
   dollar volume (`volume * adj_close`), not share count, because ETF share prices
   differ. Return `AVG(volume * adj_close)::double precision AS
@@ -414,12 +576,13 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   Only use share volume when the user explicitly asks for shares/contracts.
 - For performance windows of 2 years or longer, or when the user asks for an
   annualized long-term return, use CAGR rather than raw cumulative return:
-  `POWER(EXP(SUM(LN(1 + daily_return))),
-   365.25 / NULLIF(MAX(price_date) - MIN(price_date), 0)) - 1 AS cagr`.
+  `POWER(last_in_window_price / first_in_window_price,
+   365.25 / NULLIF(period_end - period_start, 0)) - 1 AS cagr`.
   Keep cumulative_return for sub-2-year windows or when explicitly requested.
 - If a relationship/correlation question omits a period, use the trailing
   {DEFAULT_RELATIONSHIP_LOOKBACK}. Build one comparable row per ticker with
-  both requested numeric measures, period_start, as_of_date and observations;
+  both requested numeric measures, period_start, period_end,
+  price_observations and return_observations;
   require at least {MIN_RELATIONSHIP_OBSERVATIONS} paired observations.
   Include the Pearson coefficient as `correlation` using CORR(...) OVER () so
   the same result supports a scatter plot and an exact numeric answer.
@@ -671,27 +834,14 @@ def reader_ping() -> tuple[bool, str]:
 
 
 def run_readonly(sql: str) -> pd.DataFrame:
-    """Defence layers 2+3: read-only role + statement_timeout."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.engine import URL
+    """Execute validated SQL with database-enforced read-only safeguards."""
 
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    url = URL.create(
-        "postgresql+psycopg2",
-        username=os.getenv("QA_DB_USER", "etf_reader"),
-        password=os.getenv("QA_DB_PASSWORD", "etf_reader"),
-        host=host,
-        port=int(os.getenv("POSTGRES_PORT", "5433")),
-        database=os.getenv("POSTGRES_DB", "etf_analytics"),
-    )
-    # NB: statement_timeout is NOT passed as a startup option — Neon's pooler
-    # (pgbouncer) rejects those. Set it as SET LOCAL inside the transaction so
-    # the read-only query still can't run away (defence layer 3).
-    engine = create_engine(
-        url,
-        connect_args={"connect_timeout": 3, "sslmode": sslmode_for(host)},
-    )
-    with engine.begin() as conn:
+    # Keep settings transaction-local for pooled connections. READ ONLY must be
+    # the first SQL command in this transaction; PostgreSQL will reject it after
+    # a query has already run.
+    with _reader_engine().begin() as conn:
+        conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+        conn.exec_driver_sql(f"SET LOCAL search_path = {SAFE_SEARCH_PATH}")
         conn.exec_driver_sql(
             f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}"
         )

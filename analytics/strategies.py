@@ -1,5 +1,5 @@
 """
-Pure, deterministic backtests of representative investment strategies
+Pure, deterministic historical simulations of representative investment rules
 over daily adjusted-close price series.
 
 Educational illustrations for the dashboard's Strategy Lab page —
@@ -84,6 +84,23 @@ def sma_trend(risk: pd.Series, window: int = 200, park: pd.Series | None = None)
     return (1.0 + pd.Series(rets, index=risk.index)).cumprod()
 
 
+def sma_trend_for_period(
+    risk: pd.Series,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    window: int = 200,
+) -> pd.Series:
+    """Build the signal with pre-period warm-up, then rebase at ``start``."""
+
+    clean = risk.dropna().sort_index().loc[:end]
+    evaluation_index = clean.loc[start:end].index
+    if evaluation_index.empty:
+        raise ValueError("no trend data is available in the requested period")
+    full_curve = sma_trend(clean, window=window)
+    period_curve = full_curve.reindex(evaluation_index)
+    return period_curve / period_curve.iloc[0]
+
+
 def infinite_buy(prices: pd.Series, n_splits: int = 40, take_profit: float = 0.10) -> pd.Series:
     """Simplified "infinite buying" style cycle strategy.
 
@@ -105,18 +122,27 @@ def infinite_buy(prices: pd.Series, n_splits: int = 40, take_profit: float = 0.1
     shares = 0.0
     cost = 0.0
     values = []
+    sell_next_bar = False
     for price in prices:
-        # 1) take-profit check on the existing position
-        if shares > 0 and shares * price >= cost * (1.0 + take_profit):
+        # A threshold observed at close t is executable no earlier than close
+        # t+1 in this daily-close simulator. Do not sell and repurchase at the
+        # same close.
+        sold_today = sell_next_bar and shares > 0
+        if sold_today:
             cash += shares * price
             shares = 0.0
             cost = 0.0
-        # 2) daily split buy while cash lasts
-        if cash >= per_buy:
+        sell_next_bar = False
+
+        if not sold_today and cash >= per_buy:
             shares += per_buy / price
             cash -= per_buy
             cost += per_buy
+
         values.append(cash + shares * price)
+        sell_next_bar = (
+            shares > 0 and shares * price >= cost * (1.0 + take_profit)
+        )
     return pd.Series(values, index=prices.index)
 
 
@@ -141,6 +167,27 @@ def annualized_vol(equity: pd.Series, periods_per_year: int = TRADING_DAYS_PER_Y
     if len(rets) < 2:
         return float("nan")
     return float(rets.std() * np.sqrt(periods_per_year))
+
+
+def observed_periods_per_year(
+    index: pd.Index,
+    fallback: float = TRADING_DAYS_PER_YEAR,
+) -> float:
+    """Infer annualization from the aligned observations actually simulated.
+
+    A US/European inner-joined calendar can contain fewer sessions than either
+    market alone. Short samples use the conventional fallback because their
+    calendar-derived rate is unstable.
+    """
+
+    dates = pd.DatetimeIndex(pd.to_datetime(index)).sort_values().unique()
+    if len(dates) < 2:
+        return float(fallback)
+    elapsed_days = (dates[-1] - dates[0]).days
+    if elapsed_days < 180:
+        return float(fallback)
+    observed_rate = (len(dates) - 1) * 365.25 / elapsed_days
+    return float(min(max(observed_rate, 1.0), 366.0))
 
 
 def max_drawdown(equity: pd.Series) -> float:

@@ -8,17 +8,40 @@ import pytest
 import fetch_prices
 
 
-def test_normalize_history_uses_close_when_adjusted_close_is_missing():
+def test_normalize_history_rejects_unadjusted_close_fallback():
     history = pd.DataFrame(
         {"Open": [99.0], "High": [102.0], "Low": [98.0], "Close": [101.0], "Volume": [10]},
         index=pd.DatetimeIndex(["2026-07-21"], name="Date"),
     )
 
+    with pytest.raises(RuntimeError, match="no Adjusted Close.*refusing"):
+        fetch_prices._normalize_history(history, "SPY")
+
+
+def test_normalize_history_keeps_only_usable_adjusted_prices():
+    history = pd.DataFrame(
+        {
+            "Close": [101.0, 102.0],
+            "Adj Close": [100.5, None],
+            "Volume": [10, 11],
+        },
+        index=pd.DatetimeIndex(["2026-07-21", "2026-07-22"], name="Date"),
+    )
+
     result = fetch_prices._normalize_history(history, "SPY")
 
-    assert result.loc[0, "ticker"] == "SPY"
-    assert result.loc[0, "adj_close"] == 101.0
+    assert result["ticker"].tolist() == ["SPY"]
+    assert result["adj_close"].tolist() == [100.5]
     assert str(result.loc[0, "price_date"]) == "2026-07-21"
+
+
+def test_configured_tickers_uses_file_and_deduplicates(monkeypatch, tmp_path):
+    universe = tmp_path / "etf_universe.txt"
+    universe.write_text("# comment\nspy\nQQQ\nSPY\n", encoding="utf-8")
+    monkeypatch.delenv("ETF_TICKERS", raising=False)
+    monkeypatch.setattr(fetch_prices, "UNIVERSE_FILE", universe)
+
+    assert fetch_prices.configured_tickers() == ["SPY", "QQQ"]
 
 
 def test_main_supports_parquet_only_mode(monkeypatch):

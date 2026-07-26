@@ -93,12 +93,12 @@ role; generated Python or plotting code is never executed.
 flowchart LR
   U[User question<br/>EN/KR] --> S{Scope routing + SQL<br/>normally one structured-output call}
   S -- out_of_scope<br/>(advice · prediction · causal · backtest) --> R1[Precise refusal]
-  S -- data_query + SQL --> V1{sqlglot guard<br/>SELECT · tables · documented columns · LIMIT}
+  S -- data_query + SQL --> V1{sqlglot guard<br/>SELECT · table/column/function allowlists · LIMIT}
   V1 -- unsafe --> R2[Refuse + show reason]
   V1 -- column mismatch --> F[One bounded correction call]
   F --> V2{Full guard again}
   V2 -- rejected --> R2
-  V1 -- safe SQL --> X[(Execute as etf_reader<br/>read-only · SET LOCAL statement_timeout)]
+  V1 -- safe SQL --> X[(Execute as etf_reader<br/>READ ONLY · safe search_path · timeout)]
   V2 -- safe SQL --> X
   X --> C[Deterministic chart selection<br/>line · bar · scatter · table]
   C --> P{ChartSpec<br/>pydantic-validated}
@@ -117,10 +117,14 @@ is the requested metric or the user explicitly asks for it. Plain volume means
 log-scaled average daily dollar volume, explicit historical windows override the
 1-year default, and performance windows of 2 years or longer use CAGR.
 
-Defence in depth: even if the gate and the sqlglot allowlist were both bypassed,
-execution runs as `etf_reader` (SELECT-only on `public_marts`), so writes and
-non-whitelisted tables are impossible at the database level. Generated SQL is
-surfaced in the UI for transparency and auditability.
+Defence in depth: `etf_reader` has SELECT only on `public_marts`, defaults to
+read-only transactions, and the application also issues `SET TRANSACTION READ
+ONLY` before the query. A fixed `pg_catalog`-only search path avoids resolving
+objects from application or user schemas; mart tables must be fully qualified.
+The parser still rejects
+tableless SELECTs and any function outside its reviewed allowlist because
+PostgreSQL SELECT expressions can have side effects. Generated SQL is surfaced
+in the UI for transparency and auditability.
 
 ## Airflow DAG
 
@@ -153,5 +157,5 @@ DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
 - Airflow task logs
 - GitHub Actions run logs for code checks and hosted data refreshes
 - dbt run artifacts under `dbt/target/`
-- A failing dbt recency test when `mart_etf_risk_metrics.as_of_date` is more than seven days old
+- A failing dbt test when any configured ticker's newest `as_of_date` is more than seven days old
 - Ask request/error events under `qa/logs/` locally (questions can be sensitive; do not publish raw logs)

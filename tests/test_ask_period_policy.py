@@ -3,6 +3,7 @@
 from ask import (
     DEFAULT_RELATIONSHIP_LOOKBACK,
     DEFAULT_RETURN_LOOKBACK,
+    FEW_SHOTS,
     MAX_HISTORICAL_LOOKBACK_YEARS,
     MIN_OBSERVATIONS_PER_YEAR,
     MIN_RELATIONSHIP_OBSERVATIONS,
@@ -11,6 +12,7 @@ from ask import (
     _question_with_period_context,
     historical_lookback_years,
 )
+from sql_guard import validate
 
 
 def test_ambiguous_return_ranking_has_explicit_default_window():
@@ -23,7 +25,8 @@ def test_ambiguous_return_ranking_has_explicit_default_window():
 
 def test_default_ranking_requires_enough_observations():
     assert MIN_DEFAULT_RETURN_OBSERVATIONS == 200
-    assert "HAVING COUNT(daily_return) >= 200" in SQL_SYSTEM_PROMPT
+    assert "at least 200 in-window returns" in SQL_SYSTEM_PROMPT
+    assert "COUNT(*) - 1 >= 200" in SQL_SYSTEM_PROMPT
 
 
 def test_relationship_questions_are_in_scope_with_a_default_window():
@@ -69,9 +72,10 @@ def test_known_relationship_questions_are_canonical_examples():
     assert "avg_daily_dollar_volume" in SQL_SYSTEM_PROMPT
     assert "volume * p.adj_close" in SQL_SYSTEM_PROMPT
     assert "LN(NULLIF(avg_daily_dollar_volume, 0))" in SQL_SYSTEM_PROMPT
-    assert "avg_annualized_vol_30d" in SQL_SYSTEM_PROMPT
+    assert "period_annualized_volatility" in SQL_SYSTEM_PROMPT
     assert "How do return performance and volatility move together" in SQL_SYSTEM_PROMPT
-    assert "AVG(m.annualized_vol_30d)" in SQL_SYSTEM_PROMPT
+    assert "STDDEV_SAMP(period_daily_return) * SQRT(252)" in SQL_SYSTEM_PROMPT
+    assert "AVG(m.annualized_vol_30d)" not in SQL_SYSTEM_PROMPT
 
 
 def test_prompt_routes_general_concepts_without_sql_or_investment_advice():
@@ -85,7 +89,7 @@ def test_prompt_routes_general_concepts_without_sql_or_investment_advice():
 
 def test_long_term_performance_uses_cagr_policy():
     assert "performance windows of 2 years or longer" in SQL_SYSTEM_PROMPT
-    assert "365.25 / NULLIF(MAX(price_date) - MIN(price_date), 0)" in SQL_SYSTEM_PROMPT
+    assert "365.25 / NULLIF(period_end - period_start, 0)" in SQL_SYSTEM_PROMPT
 
 
 def test_generic_relationships_default_to_unleveraged_scope():
@@ -98,6 +102,28 @@ def test_generic_relationships_default_to_unleveraged_scope():
 def test_ten_year_liquidity_and_cagr_examples_lock_the_contract():
     assert "higher average trading volume" in SQL_SYSTEM_PROMPT
     assert "CURRENT_DATE - INTERVAL '10 years'" in SQL_SYSTEM_PROMPT
-    assert "HAVING COUNT(r.annualized_vol_30d) >= 2000" in SQL_SYSTEM_PROMPT
+    assert "HAVING COUNT(period_daily_return) >= 2000" in SQL_SYSTEM_PROMPT
     assert "relationship between 10-year CAGR" in SQL_SYSTEM_PROMPT
-    assert "CORR(cagr, avg_annualized_vol_30d)" in SQL_SYSTEM_PROMPT
+    assert "CORR(cagr, period_annualized_volatility)" in SQL_SYSTEM_PROMPT
+
+
+def test_prompt_uses_canonical_period_metric_contract():
+    assert "# Metric Contract" in SQL_SYSTEM_PROMPT
+    assert "Recompute returns after filtering the price window" in SQL_SYSTEM_PROMPT
+    assert "Reset the running peak at the first in-window price" in SQL_SYSTEM_PROMPT
+    assert "Do not use the average of `rolling_vol_30d`" in SQL_SYSTEM_PROMPT
+    assert "MIN(adj_close / period_peak - 1) AS period_max_drawdown" in (
+        SQL_SYSTEM_PROMPT
+    )
+
+
+def test_every_data_query_few_shot_passes_the_sql_guard():
+    queries = []
+    for example in FEW_SHOTS.split("Example ")[1:]:
+        if "Intent: data_query" not in example:
+            continue
+        queries.append(example.split("SQL:", 1)[1].split("\n\n", 1)[0].strip())
+
+    assert len(queries) == 10
+    for query in queries:
+        validate(query)

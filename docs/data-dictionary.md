@@ -7,6 +7,8 @@ Definitions for raw files, warehouse tables, and mart outputs. Keep in sync with
 - **Grain**: one row per `ticker` × `price_date` unless noted
 - **Timezone**: dates are `DATE` in America/New_York trading calendar (no intraday)
 - **Ticker**: uppercase symbol (`SGOV`, `VGIT`)
+- **Requested-period metrics**: the authoritative definitions and coverage
+  fields are in [`metric-contract.md`](metric-contract.md)
 
 ---
 
@@ -69,7 +71,8 @@ descriptive analysis against risk metrics.
 
 ### `mart_etf_risk_metrics`
 
-Rolling risk statistics (window = 30 trading days unless changed in dbt).
+Point-in-time rolling risk statistics (window = 30 trading days unless changed
+in dbt). These are not requested-period aggregates.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -77,17 +80,24 @@ Rolling risk statistics (window = 30 trading days unless changed in dbt).
 | `price_date` | date | As-of date |
 | `rolling_vol_30d` | numeric | Sample std dev of `daily_return` over 30 days |
 | `annualized_vol_30d` | numeric | `rolling_vol_30d × sqrt(252)` |
-| `drawdown` | numeric | \((adj\_close / running\_max) - 1\) |
+| `drawdown` | numeric | \((adj\_close / running\_max) - 1\), where the peak uses all available warehouse history through the as-of date |
 | `as_of_date` | date | Same as `price_date`; for freshness checks |
 
 ---
+
+## Requested-period metrics
+
+See the [Metric Contract](metric-contract.md). Period return uses the first and
+last adjusted prices inside the requested window; period volatility recomputes
+in-window daily returns; period MDD resets its peak at the window start. Every
+aggregate reports start/end dates and price/return observation counts.
 
 ## Streamlit metrics (derived in app)
 
 | Metric | Definition |
 |--------|------------|
 | Cumulative return | \(\prod (1 + daily\_return) - 1\) over selected range |
-| Max drawdown | \(\min(drawdown)\) over range |
+| Max drawdown | Recomputed from the account-value path shown in the selected range |
 | Latest 30d vol | Last non-null `rolling_vol_30d` |
 
 ## Ask relationship metrics (derived in SQL)

@@ -100,7 +100,6 @@ jobs:
           # fetch_prices keeps its local raw-file contract, but CI writes outside
           # the checkout so the repository remains code-only.
           RAW_DATA_DIR: ${{ runner.temp }}/etf-raw
-          ETF_TICKERS: SGOV,VGIT,TLT,BND,LQD,HYG,TIP,SPY,QQQ,QLD,TQQQ,VEA,SCHD,VWO,IWM,VNQ,GLD
           FETCH_PERIOD: ${{ steps.fetch_window.outputs.period }}
 
       - name: dbt build against cloud warehouse

@@ -17,6 +17,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from strategies import observed_periods_per_year
+
 TRADING_DAYS_PER_YEAR = 252
 
 
@@ -246,8 +248,9 @@ def result_metrics(result: SimulationResult) -> dict[str, float]:
     initial = float(value.iloc[0])
     final = float(value.iloc[-1])
     returns = value.pct_change().dropna()
+    periods_per_year = observed_periods_per_year(value.index)
     annualized_vol = (
-        float(returns.std() * np.sqrt(TRADING_DAYS_PER_YEAR))
+        float(returns.std() * np.sqrt(periods_per_year))
         if len(returns) >= 2
         else float("nan")
     )

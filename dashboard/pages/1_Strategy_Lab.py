@@ -1,4 +1,4 @@
-"""Custom portfolio simulation and five representative strategy examples."""
+"""Educational portfolio simulator and five representative rule examples."""
 
 from __future__ import annotations
 
@@ -85,7 +85,10 @@ def _curve_metrics(value: pd.Series) -> dict[str, float]:
         "profit": final - initial,
         "total_return": final / initial - 1.0,
         "max_drawdown": strat.max_drawdown(clean),
-        "annualized_vol": strat.annualized_vol(clean),
+        "annualized_vol": strat.annualized_vol(
+            clean,
+            periods_per_year=strat.observed_periods_per_year(clean.index),
+        ),
     }
 
 
@@ -572,11 +575,23 @@ def _reference_curves(
             ).value,
             "balanced": total_capital
             * strat.rebalance(common, {"SPY": 0.6, "BND": 0.4}, every=63),
-            "trend": total_capital * strat.sma_trend(common["QQQ"], window=200),
             "split": total_capital
             * strat.infinite_buy(common["TQQQ"], n_splits=40, take_profit=0.10),
         }
     )
+    # Calculate the 200-day signal on history before the displayed period, then
+    # rebase the resulting equity curve at the common start. Without this
+    # warm-up, every comparison falsely parks in cash for its first ~200 rows.
+    trend_window = strat.sma_trend_for_period(
+        all_prices["QQQ"],
+        start,
+        end,
+        window=200,
+    )
+    trend_window = trend_window.reindex(common.index).dropna()
+    if len(trend_window) != len(common):
+        return None
+    curves["trend"] = total_capital * trend_window
     return curves, common.index
 
 

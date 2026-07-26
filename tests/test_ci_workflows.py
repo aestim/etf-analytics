@@ -32,3 +32,31 @@ def test_scheduled_ingest_uses_small_daily_and_full_monthly_windows():
     assert 'period="10y"' in workflow
     assert "FETCH_PERIOD: ${{ steps.fetch_window.outputs.period }}" in workflow
     assert "1mo|10y" in workflow
+
+
+def test_ingest_uses_one_versioned_universe_instead_of_workflow_literals():
+    workflow = (ROOT / ".github" / "workflows" / "daily_ingest.yml").read_text(
+        encoding="utf-8"
+    )
+    dag = (ROOT / "airflow" / "dags" / "etf_pipeline_dag.py").read_text(
+        encoding="utf-8"
+    )
+    universe = (ROOT / "config" / "etf_universe.txt").read_text(encoding="utf-8")
+
+    assert "SPY" in universe
+    assert "ETF_TICKERS:" not in workflow
+    assert "SGOV,VGIT,TLT" not in workflow
+    assert "SGOV,VGIT,TLT" not in dag
+
+
+def test_local_environment_excludes_build_bloat_and_installs_dbt():
+    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+    devcontainer = (ROOT / ".devcontainer" / "devcontainer.json").read_text(
+        encoding="utf-8"
+    )
+
+    for required_pattern in (".git", ".venv", ".env", "data/raw", "dbt/target"):
+        assert required_pattern in dockerignore
+    assert "requirements-dev.txt" in devcontainer
+    assert "airflow/requirements.txt" in devcontainer
+    assert "dbt deps" in devcontainer

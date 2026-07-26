@@ -17,6 +17,8 @@ from pathlib import Path
 
 import yaml
 
+from metric_contract import build_metric_contract_prompt
+
 ROOT = Path(__file__).resolve().parents[1]
 MARTS_SCHEMA_YML = ROOT / "dbt" / "models" / "marts" / "schema.yml"
 SEED_CSV = ROOT / "dbt" / "seeds" / "etf_info.csv"
@@ -52,6 +54,7 @@ def build_schema_prompt() -> str:
     models = _documented_models()
     sections = [_model_section(m) for m in models if m["name"] in ALLOWED_TABLES]
     sections.append(_universe_section())
+    sections.append(build_metric_contract_prompt())
     return "\n\n".join(sections)
 
 

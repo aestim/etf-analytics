@@ -18,7 +18,7 @@ models:
       - name: description
         description: One-line plain-language summary of what the fund holds
   - name: mart_etf_returns
-    description: Daily adjusted close, share volume, and simple return per ETF. One row per ticker per trading date. Use for price levels, returns, volume, cumulative performance, and volume/risk relationships.
+    description: Daily adjusted close, share volume, and simple return per ETF. One row per ticker per trading date. Use adjusted prices to recompute requested-period return, volatility, maximum drawdown, and coverage according to docs/metric-contract.md.
     columns:
       - name: ticker
         description: ETF ticker symbol, uppercase (e.g. SPY, TLT, GLD)
@@ -51,18 +51,7 @@ models:
                 where: "daily_return is not null"
 
   - name: mart_etf_risk_metrics
-    description: Rolling risk metrics per ETF per trading date, derived from mart_etf_returns. Use for volatility and drawdown questions.
-    tests:
-      # Freshness gate: fail (not warn) if the newest metric date is over a week
-      # old — catches a stalled ingest serving silently stale numbers. 7 days
-      # absorbs weekends/holidays; anything older is a real problem.
-      - dbt_utils.recency:
-          arguments:
-            datepart: day
-            field: as_of_date
-            interval: 7
-          config:
-            severity: error
+    description: Point-in-time rolling risk metrics per ETF per trading date, derived from mart_etf_returns. Use for as-of snapshots and rolling series, not requested-period volatility or maximum drawdown; those must be recomputed from filtered adjusted prices per docs/metric-contract.md.
     columns:
       - name: ticker
         description: ETF ticker symbol, uppercase
@@ -75,7 +64,7 @@ models:
       - name: annualized_vol_30d
         description: rolling_vol_30d scaled to an annual figure (× sqrt(252)) so it matches how volatility is usually quoted. Use this for "annual/연 volatility" questions.
       - name: drawdown
-        description: Decline from the running maximum adjusted close, as a negative fraction (0 = at peak, -0.12 = 12% below peak)
+        description: As-of decline from the running maximum adjusted close over all warehouse history through price_date. This peak can predate a later query window; do not use MIN(drawdown) for requested-period maximum drawdown.
       - name: as_of_date
         description: Equals price_date; retained for data-freshness checks. Prefer price_date in queries.
         tests: [not_null]

@@ -10,9 +10,11 @@ from strategies import (
     infinite_buy,
     lump_sum,
     max_drawdown,
+    observed_periods_per_year,
     rebalance,
     sharpe,
     sma_trend,
+    sma_trend_for_period,
     summary_metrics,
 )
 
@@ -85,6 +87,17 @@ def test_sma_trend_no_lookahead():
     assert eq.iloc[62] > 1.0
 
 
+def test_sma_trend_for_period_uses_pre_period_warmup():
+    prices = _series(np.linspace(100.0, 200.0, 260))
+    start = prices.index[220]
+
+    warmed = sma_trend_for_period(prices, start, prices.index[-1], window=200)
+    truncated = sma_trend(prices.loc[start:], window=200)
+
+    assert warmed.iloc[1] > 1.0
+    assert truncated.iloc[-1] == pytest.approx(1.0)
+
+
 # --- infinite_buy -----------------------------------------------------------
 
 
@@ -98,6 +111,13 @@ def test_infinite_buy_takes_profit_on_jump():
     eq = infinite_buy(_series(values), n_splits=40, take_profit=0.10)
     # 10 splits bought at 100, doubled -> equity above break-even
     assert eq.iloc[-1] > 1.05
+
+
+def test_infinite_buy_executes_take_profit_on_next_bar_without_same_close_rebuy():
+    eq = infinite_buy(_series([100.0, 100.0, 200.0, 100.0]), n_splits=2)
+
+    assert eq.iloc[2] == pytest.approx(2.0)
+    assert eq.iloc[3] == pytest.approx(1.0)
 
 
 def test_infinite_buy_cash_never_negative():
@@ -127,3 +147,9 @@ def test_sharpe_flat_is_nan():
 def test_summary_metrics_keys():
     m = summary_metrics(_series(np.linspace(1.0, 1.5, 300)))
     assert set(m) == {"cagr", "ann_vol", "max_drawdown", "sharpe"}
+
+
+def test_observed_periods_per_year_uses_aligned_calendar_frequency():
+    index = pd.date_range("2020-01-01", periods=491, freq="3D")
+
+    assert observed_periods_per_year(index) == pytest.approx(365.25 / 3)

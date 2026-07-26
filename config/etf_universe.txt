@@ -1,0 +1,18 @@
+# One canonical warehouse universe. ETF_TICKERS may override this list locally.
+SGOV
+VGIT
+TLT
+BND
+LQD
+HYG
+TIP
+SPY
+QQQ
+QLD
+TQQQ
+VEA
+SCHD
+VWO
+IWM
+VNQ
+GLD
