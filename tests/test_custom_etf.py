@@ -12,6 +12,7 @@ import pytest
 from custom_etf import (
     CUSTOM_ETF_STATE_KEY,
     MAX_CUSTOM_ETFS,
+    _preferred_symbols_for_query,
     CustomEtfLimitError,
     DuplicateTickerError,
     InstrumentCandidate,
@@ -25,12 +26,11 @@ from custom_etf import (
     build_indexed_price_comparison,
     build_custom_marts,
     candidate_for_symbol,
-    candidate_identity_html,
-    candidate_volume_html,
+    CANDIDATE_FRAME_COLUMNS,
+    candidates_frame,
     direct_symbol_candidate,
     fetch_average_daily_volumes,
     fetch_price_history,
-    format_compact_volume,
     looks_like_isin,
     merge_custom_data,
     normalize_search_query,
@@ -114,6 +114,47 @@ def test_search_query_variants_relax_share_class_terms_only():
     assert search_query_variants("Vanguard FTSE All-World") == (
         "Vanguard FTSE All-World",
     )
+
+
+def test_bare_index_names_also_search_for_the_funds_tracking_them():
+    """A plain index name matches indices and futures, which are filtered out."""
+    assert search_query_variants("ftse 100") == ("ftse 100", "ftse 100 ETF")
+    assert search_query_variants("msci world") == ("msci world", "msci world ETF")
+
+
+@pytest.mark.parametrize(
+    "query", ["s&p 500", "S&P 500", "snp 500", "sp 500", "sp500", "snp500", "s&p500"]
+)
+def test_every_sp_500_spelling_finds_the_same_funds(query):
+    """`&` is not a term character, so each shorthand tokenizes differently."""
+    variants = search_query_variants(query)
+
+    assert variants[0] == normalize_search_query(query)
+    assert "S&P 500 ETF" in variants
+    assert {"SPY", "VOO", "IVV"} == set(_preferred_symbols_for_query(query))
+
+
+@pytest.mark.parametrize("query", ["snp", "sp", "500", "sinopec"])
+def test_sp_500_shorthands_need_the_index_number_to_expand(query):
+    """`SNP` on its own is Sinopec — a real ticker, not a misspelt index."""
+    assert search_query_variants(query) == (query,)
+    assert not _preferred_symbols_for_query(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SPY",  # a symbol resolves directly
+        "vwce.de",
+        "IE00BK5BQT80",
+        "s&p500",  # single token, already matches fund names
+        "s&p 500 etf",  # the visitor asked for funds already
+        "NASDAQ 100",  # a curated expansion covers this one
+        "Vanguard FTSE All-World",  # naming a provider means narrowing, not broadening
+    ],
+)
+def test_fund_hint_is_not_added_where_it_would_only_cost_a_request(query):
+    assert f"{query} ETF" not in search_query_variants(query)
 
 
 def test_search_results_prioritize_etfs_without_dropping_other_funds():
@@ -446,105 +487,78 @@ def test_search_results_are_not_paginated():
     assert "custom_etf_show_all" not in source
 
 
-def test_result_header_and_rows_share_one_column_ratio():
-    """Volume only reads as a column when every row splits the width identically."""
-    tree = _home_tree()
-    shared_ratio_columns = [
+def test_results_are_a_single_selectable_table():
+    """Every attempt at splitting a row into text plus its own button failed:
+    st.columns and a horizontal container wrapped the button onto its own line
+    on a phone, and a CSS overlay stopped registering clicks. Row selection is
+    the one documented way to make a Streamlit list clickable."""
+    tables = [
         node
-        for node in ast.walk(tree)
-        if _dotted_call_name(node) == "st.columns"
-        and node.args
-        and isinstance(node.args[0], ast.Name)
-        and node.args[0].id == "CANDIDATE_ROW_RATIO"
+        for node in ast.walk(_home_tree())
+        if _dotted_call_name(node) == "st.dataframe"
+        and any(keyword.arg == "on_select" for keyword in node.keywords)
     ]
 
-    assert len(shared_ratio_columns) == 2, "header and result rows must share it"
-    ratio = next(
-        ast.literal_eval(node.value)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "CANDIDATE_ROW_RATIO"
-            for target in node.targets
-        )
-    )
-    assert len(ratio) == 3, "identity, volume and action columns"
-
-
-def test_candidate_row_leads_with_the_symbol_and_escapes_provider_text():
-    candidate = InstrumentCandidate(
-        symbol="VUSA.L",
-        display_name="<script>alert(1)</script> Vanguard S&P 500",
-        exchange="London",
-        provider_type="ETF",
-        currency="GBP",
-        average_daily_volume=40_182,
+    assert len(tables) == 1
+    options = {
+        keyword.arg: getattr(keyword.value, "value", None)
+        for keyword in tables[0].keywords
+    }
+    assert options["on_select"] == "rerun"
+    assert options["selection_mode"] == "single-row"
+    # A per-search key, so a new result set does not inherit the old selection.
+    assert "generation" in ast.unparse(
+        next(kw.value for kw in tables[0].keywords if kw.arg == "key")
     )
 
-    markup = candidate_identity_html(
-        candidate, exchange_fallback="Unknown", currency_fallback="Unknown"
+
+def test_a_handled_selection_is_recorded_so_it_is_not_added_twice():
+    """A dataframe selection survives reruns; without a marker, reopening the
+    dialog would re-add the same listing on every run."""
+    source = (Path(__file__).resolve().parents[1] / "dashboard" / "home.py").read_text(
+        encoding="utf-8"
     )
 
-    assert markup.index("VUSA.L") < markup.index("Vanguard")
-    assert "London · GBP" in markup
-    assert "<script>" not in markup
-    assert "&lt;script&gt;" in markup
-    # A plain ETF is the rule here, so it earns no pill of its own.
-    assert "ETF</span>" not in markup
+    assert "SELECTION_HANDLED_KEY" in source
 
 
-def test_candidate_row_flags_only_non_etf_fund_types():
-    mutual_fund = InstrumentCandidate(
-        symbol="SPXP.SW",
-        display_name="Invesco S&P 500 Fund",
-        exchange="Swiss",
-        provider_type="MUTUALFUND",
-        currency="CHF",
+def test_candidates_frame_carries_one_row_per_listing():
+    candidates = (
+        InstrumentCandidate("QQQ", "Invesco QQQ Trust", "NASDAQ", "ETF", 38_600_000),
+        InstrumentCandidate("XNAS.L", "Xtrackers NASDAQ 100", "London", "ETF", None),
     )
 
-    markup = candidate_identity_html(
-        mutual_fund, exchange_fallback="Unknown", currency_fallback="Unknown"
+    frame = candidates_frame(candidates)
+
+    assert list(frame.columns) == list(CANDIDATE_FRAME_COLUMNS)
+    assert frame["symbol"].tolist() == ["QQQ", "XNAS.L"]
+    assert frame["name"].tolist() == ["Invesco QQQ Trust", "Xtrackers NASDAQ 100"]
+    assert frame["exchange"].tolist() == ["NASDAQ", "London"]
+    # Row order is the ranking, so a selected index maps straight back.
+    assert frame.index.tolist() == [0, 1]
+
+
+def test_candidates_frame_keeps_volume_numeric_and_missing_values_null():
+    """A NumberColumn formats and right-aligns it; a placeholder string cannot."""
+    candidates = (
+        InstrumentCandidate("QQQ", "Invesco QQQ Trust", "NASDAQ", "ETF", 38_600_000),
+        InstrumentCandidate("XNAS.L", "Xtrackers NASDAQ 100", "London", "ETF", None),
     )
 
-    assert "Mutualfund</span>" in markup
+    volume = candidates_frame(candidates)["average_daily_volume"]
+
+    assert pd.api.types.is_numeric_dtype(volume)
+    assert volume.iloc[0] == 38_600_000
+    assert pd.isna(volume.iloc[1])
 
 
-def test_candidate_row_falls_back_when_the_provider_omits_listing_details():
-    bare = InstrumentCandidate(
-        symbol="AAA", display_name="AAA", exchange="", provider_type=""
-    )
+def test_candidates_frame_is_empty_but_shaped_without_results():
+    frame = candidates_frame(())
 
-    markup = candidate_identity_html(
-        bare, exchange_fallback="Unknown exchange", currency_fallback="Unknown currency"
-    )
-
-    assert "Unknown exchange · Unknown currency" in markup
+    assert frame.empty
+    assert list(frame.columns) == list(CANDIDATE_FRAME_COLUMNS)
 
 
-@pytest.mark.parametrize(
-    "volume,expected",
-    [
-        (None, "—"),
-        (float("nan"), "—"),
-        (0, "0"),
-        (999, "999"),
-        (40_182, "40.2K"),
-        (9_004_551, "9.0M"),
-        (2_500_000_000, "2.5B"),
-    ],
-)
-def test_compact_volume_formatting(volume, expected):
-    assert format_compact_volume(volume) == expected
-
-
-def test_missing_volume_is_dimmed_rather_than_left_blank():
-    known = InstrumentCandidate("AAA", "AAA", "", "", average_daily_volume=1_500)
-    unknown = InstrumentCandidate("BBB", "BBB", "", "")
-
-    assert "1.5K" in candidate_volume_html(known)
-    assert "opacity" not in candidate_volume_html(known)
-    assert "—" in candidate_volume_html(unknown)
-    assert "opacity:.55" in candidate_volume_html(unknown)
 
 
 def test_sort_modes_order_the_same_pool_differently():

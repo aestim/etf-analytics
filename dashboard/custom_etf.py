@@ -8,7 +8,6 @@ schema.
 
 from __future__ import annotations
 
-import html
 import re
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, replace
@@ -45,12 +44,23 @@ SEARCH_TERM_ALIASES = {
     "DISTRIBUTING": "DIST",
     "DISTRIBUTION": "DIST",
 }
+_SP500_FUND_QUERIES = ("S&P 500 ETF",)
+_SP500_SYMBOLS = frozenset({"SPY", "VOO", "IVV"})
+# required canonical terms -> extra provider queries, symbols to rank first
+_NASDAQ_FUND_QUERIES = ("NASDAQ 100 UCITS ETF", "Invesco QQQ")
 INDEX_QUERY_EXPANSIONS = (
-    (
-        frozenset({"NASDAQ", "100"}),
-        ("NASDAQ 100 UCITS ETF", "Invesco QQQ"),
-        frozenset({"QQQ"}),
-    ),
+    (frozenset({"NASDAQ", "100"}), _NASDAQ_FUND_QUERIES, frozenset({"QQQ"})),
+    # Glued spellings are one token, so they match no two-term key above.
+    (frozenset({"NASDAQ100"}), _NASDAQ_FUND_QUERIES, frozenset({"QQQ"})),
+    # "S&P 500" tokenizes to S / P / 500 because & is not a term character.
+    # The rest are the shorthands people type, which Yahoo otherwise reads as
+    # unrelated tickers — SNP alone is Sinopec, SP alone matches nothing useful.
+    (frozenset({"S", "P", "500"}), _SP500_FUND_QUERIES, _SP500_SYMBOLS),
+    (frozenset({"S", "P500"}), _SP500_FUND_QUERIES, _SP500_SYMBOLS),
+    (frozenset({"SNP", "500"}), _SP500_FUND_QUERIES, _SP500_SYMBOLS),
+    (frozenset({"SP", "500"}), _SP500_FUND_QUERIES, _SP500_SYMBOLS),
+    (frozenset({"SNP500"}), _SP500_FUND_QUERIES, _SP500_SYMBOLS),
+    (frozenset({"SP500"}), _SP500_FUND_QUERIES, _SP500_SYMBOLS),
 )
 INDEX_PROVIDER_TERMS = {
     "AMUNDI",
@@ -156,95 +166,57 @@ def search_query_variants(value: str) -> tuple[str, ...]:
     requested_terms = _canonical_search_terms(query)
     if requested_terms & INDEX_PROVIDER_TERMS:
         return tuple(variants)
+    curated = False
     for required_terms, extra_queries, _ in INDEX_QUERY_EXPANSIONS:
         if not required_terms.issubset(requested_terms):
             continue
+        curated = True
         variants.extend(
             extra_query for extra_query in extra_queries if extra_query not in variants
         )
+    # A bare index name ("s&p 500", "ftse 100") mostly matches index and futures
+    # symbols, which normalize_ticker drops — leaving no candidates at all. Ask
+    # for the funds tracking it too. Curated expansions already do this, and a
+    # relaxed share-class query got its own hint above, so neither repeats it.
+    if (
+        not curated
+        and relaxed_query == query
+        and len(tokens) > 1
+        and _symbol_shaped_query(query) is None
+        and not requested_terms & {"ETF", "UCITS"}
+    ):
+        variants.append(f"{query} ETF")
     return tuple(variants)
 
 
-def format_compact_volume(value: float | None) -> str:
-    """Format share counts so a column of them can be compared at a glance.
+CANDIDATE_FRAME_COLUMNS = ("symbol", "name", "exchange", "average_daily_volume")
 
-    Volume is a share count, not money, so it stays currency-free. Returns an
-    em dash when the provider gave no usable figure.
+
+def candidates_frame(
+    candidates: tuple[InstrumentCandidate, ...],
+) -> pd.DataFrame:
+    """Lay search results out as one selectable row per listing.
+
+    A table is what Streamlit can make genuinely clickable: ``st.dataframe``
+    returns the selected row, so the whole row is the control without any
+    styling of Streamlit's own DOM. It also gives the measure a column header,
+    so the figure is named instead of sitting bare next to a fund name.
+
+    Column names here are internal; the display labels live in the page's
+    ``column_config`` so they can follow the interface language.
     """
 
-    if value is None or not np.isfinite(value) or value < 0:
-        return "—"
-    for threshold, suffix in (
-        (1_000_000_000, "B"),
-        (1_000_000, "M"),
-        (1_000, "K"),
-    ):
-        if value >= threshold:
-            return f"{value / threshold:,.1f}{suffix}"
-    return f"{value:,.0f}"
-
-
-def candidate_identity_html(
-    candidate: InstrumentCandidate,
-    *,
-    exchange_fallback: str,
-    currency_fallback: str,
-) -> str:
-    """Render one search result as escaped, non-interactive row markup.
-
-    The symbol leads because that is what the visitor is choosing. Exchange and
-    currency stay because they are what separate two listings of the same fund.
-    The fund type only appears when it is *not* a plain ETF, so the row shows
-    the exception instead of repeating the rule.
-
-    Every provider-supplied string is escaped: this markup is passed to
-    Streamlit with ``unsafe_allow_html=True``.
-    """
-
-    badge = html.escape(candidate.symbol.partition(".")[0][:2])
-    name = html.escape(candidate.display_name)
-    symbol = html.escape(candidate.symbol)
-    listing = " · ".join(
-        html.escape(part)
-        for part in (
-            candidate.exchange or exchange_fallback,
-            candidate.currency or currency_fallback,
-        )
-    )
-    type_pill = ""
-    if candidate.provider_type and candidate.provider_type.upper() != "ETF":
-        type_pill = (
-            "<span style='border:1px solid rgba(250,250,250,.28);"
-            "border-radius:20px;padding:.05rem .45rem;font-size:.72rem;"
-            f"opacity:.82'>{html.escape(candidate.provider_type.title())}</span>"
-        )
-    return (
-        "<div style='display:flex;gap:.7rem;align-items:center;min-width:0'>"
-        "<div style='min-width:2.3rem;height:2.3rem;border-radius:50%;"
-        "display:flex;align-items:center;justify-content:center;"
-        "background:rgba(250,250,250,.09);font-size:.78rem;font-weight:600'>"
-        f"{badge}</div>"
-        "<div style='min-width:0'>"
-        "<div style='display:flex;align-items:baseline;gap:.5rem;"
-        "flex-wrap:wrap'>"
-        f"<span style='font-weight:600;font-family:monospace'>{symbol}</span>"
-        f"<span style='opacity:.62;font-size:.78rem'>{listing}</span>"
-        f"{type_pill}</div>"
-        "<div style='opacity:.78;font-size:.85rem;margin-top:.1rem;"
-        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
-        f"{name}</div>"
-        "</div></div>"
-    )
-
-
-def candidate_volume_html(candidate: InstrumentCandidate) -> str:
-    """Render the sort key as its own right-aligned, comparable column."""
-
-    volume = html.escape(format_compact_volume(candidate.average_daily_volume))
-    dim = "" if candidate.average_daily_volume is not None else "opacity:.55;"
-    return (
-        "<div style='text-align:right;font-family:monospace;"
-        f"font-size:.9rem;{dim}'>{volume}</div>"
+    return pd.DataFrame(
+        {
+            "symbol": [candidate.symbol for candidate in candidates],
+            "name": [candidate.display_name for candidate in candidates],
+            "exchange": [candidate.exchange for candidate in candidates],
+            "average_daily_volume": pd.array(
+                [candidate.average_daily_volume for candidate in candidates],
+                dtype="Float64",
+            ),
+        },
+        columns=list(CANDIDATE_FRAME_COLUMNS),
     )
 
 

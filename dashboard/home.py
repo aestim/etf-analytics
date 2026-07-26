@@ -36,8 +36,7 @@ from custom_etf import (
     add_session_prices,
     build_custom_marts,
     build_indexed_price_comparison,
-    candidate_identity_html,
-    candidate_volume_html,
+    candidates_frame,
     clear_session_prices,
     direct_symbol_candidate,
     fetch_price_history,
@@ -110,9 +109,7 @@ SEARCH_GENERATION_KEY = "custom_etf_search_generation"
 SEARCH_SORT_KEY = "custom_etf_search_sort_v2"
 SEARCH_FLASH_KEY = "custom_etf_flash"
 HOME_SELECTED_TICKERS_KEY = "home_selected_tickers"
-# identity | volume | add button — shared by the header and every result row so
-# the volume figures line up in one scannable column.
-CANDIDATE_ROW_RATIO = [6, 1.4, 1.4]
+SELECTION_HANDLED_KEY = "custom_etf_handled_selection"
 
 
 def _store_search_state(
@@ -149,19 +146,6 @@ def _unselect_ticker_for_charts(ticker: str) -> None:
         st.session_state[HOME_SELECTED_TICKERS_KEY] = [
             selected for selected in current if selected != ticker
         ]
-
-
-def _candidate_identity_html(
-    candidate: InstrumentCandidate,
-    lang: Language,
-) -> str:
-    """Bind the interface language to the pure row renderer."""
-
-    return candidate_identity_html(
-        candidate,
-        exchange_fallback=tr("custom.exchange_unknown", lang),
-        currency_fallback=tr("custom.currency_unknown", lang),
-    )
 
 
 def _add_custom_symbol(
@@ -237,7 +221,9 @@ def custom_etf_dialog(
 ) -> None:
     """Open the session ETF search and management dialog."""
 
-    @st.dialog(tr("custom.dialog_title", lang), width="large")
+    # "large" is up to 1280px — wider than the page itself. A search list needs
+    # room for a fund name and a number, not the whole monitor.
+    @st.dialog(tr("custom.dialog_title", lang), width="medium")
     def render_dialog() -> None:
         st.caption(tr("custom.help", lang))
         with st.form("custom_etf_search_form"):
@@ -250,7 +236,6 @@ def custom_etf_dialog(
             submitted = st.form_submit_button(
                 tr("custom.search", lang),
                 type="primary",
-                width="stretch",
             )
 
         # Deliberately outside the form: a form defers widget values until the
@@ -353,49 +338,57 @@ def custom_etf_dialog(
                     )
                 )
             generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
+            st.caption(tr("custom.select_hint", lang))
 
-            # One header labels the volume column so each row does not have to
-            # repeat "1-month avg. daily volume" in prose.
-            _heading_identity, heading_volume, _heading_action = st.columns(
-                CANDIDATE_ROW_RATIO,
-                vertical_alignment="bottom",
+            # A selectable table is the one list Streamlit makes clickable
+            # through a documented API. Splitting a row into text plus its own
+            # button — with st.columns, a horizontal container, or a CSS overlay
+            # — wrapped onto a second line on a phone or stopped registering
+            # clicks. Column headers also name the measure, so the figure is not
+            # left bare beside a fund name.
+            selection = st.dataframe(
+                candidates_frame(candidates),
+                key=f"custom_etf_results_{generation}",
+                on_select="rerun",
+                selection_mode="single-row",
+                hide_index=True,
+                width="stretch",
+                row_height=DATAFRAME_ROW_HEIGHT,
+                # No width overrides: a fixed width is exactly that, so pinning
+                # every column overflowed the dialog and cut off the last one.
+                # Streamlit sizes columns to their contents and shares out any
+                # slack. Headers stay short for the same reason — a long header
+                # widens its column even when the values are narrow.
+                column_config={
+                    "symbol": st.column_config.TextColumn(
+                        tr("custom.col_symbol", lang)
+                    ),
+                    "name": st.column_config.TextColumn(tr("custom.col_fund", lang)),
+                    "exchange": st.column_config.TextColumn(
+                        tr("custom.col_exchange", lang)
+                    ),
+                    "average_daily_volume": st.column_config.NumberColumn(
+                        tr("custom.col_volume", lang),
+                        help=tr("custom.col_volume_help", lang),
+                        format="compact",
+                    ),
+                },
             )
-            heading_volume.caption(tr("custom.volume_column", lang))
-
-            def render_candidate_row(
-                candidate: InstrumentCandidate,
-            ) -> None:
-                identity_col, volume_col, action_col = st.columns(
-                    CANDIDATE_ROW_RATIO,
-                    vertical_alignment="center",
-                )
-                identity_col.markdown(
-                    _candidate_identity_html(candidate, lang),
-                    unsafe_allow_html=True,
-                )
-                volume_col.markdown(
-                    candidate_volume_html(candidate),
-                    unsafe_allow_html=True,
-                )
-                if action_col.button(
-                    tr("custom.add", lang),
-                    key=(f"add_custom_etf_{generation}_{candidate.symbol}"),
-                    width="stretch",
-                ) and _add_custom_symbol(
-                    candidate,
-                    base_returns_df,
-                    lang,
-                ):
+            picked = list(selection.selection.rows)
+            # The selection survives a rerun, so without this marker reopening
+            # the dialog would re-add the same listing on every run.
+            if picked and st.session_state.get(SELECTION_HANDLED_KEY) != (
+                generation,
+                picked[0],
+            ):
+                st.session_state[SELECTION_HANDLED_KEY] = (generation, picked[0])
+                if _add_custom_symbol(candidates[picked[0]], base_returns_df, lang):
                     st.rerun()
-
-            # Yahoo returns at most MAX_SEARCH_RESULTS candidates, which all fit
-            # in this row height — paginating them only added a click.
-            for position, candidate in enumerate(candidates):
-                if position:
-                    st.divider()
-                render_candidate_row(candidate)
         elif search_query:
             st.info(tr("custom.no_results", lang))
+
+        # The notes below are a separate section, not another result row.
+        st.divider()
 
         tickers = session_tickers(st.session_state)
         if tickers:
@@ -413,7 +406,6 @@ def custom_etf_dialog(
                     if remove_col.button(
                         tr("custom.remove", lang),
                         key=f"remove_custom_{ticker}",
-                        width="stretch",
                     ):
                         remove_session_ticker(st.session_state, ticker)
                         _unselect_ticker_for_charts(ticker)
@@ -466,10 +458,11 @@ def render_compare_selector(
             tickers,
             key=HOME_SELECTED_TICKERS_KEY,
         )
-        if add_col.button(
+        # A content-width button sits at the left of its column by default,
+        # leaving a gap before the card edge. Align it to the card's padding.
+        if add_col.container(horizontal_alignment="right").button(
             tr("home.add_etf", lang),
             type="primary",
-            width="stretch",
         ):
             custom_etf_dialog(base_returns_df, lang)
         currency_col, basis_col = st.columns([1, 2])

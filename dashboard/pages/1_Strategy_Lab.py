@@ -408,7 +408,7 @@ def _strategy_editor_dialog(
         else "simulation.editor_second_title"
     )
 
-    @st.dialog(tr(title_key, lang), width="large")
+    @st.dialog(tr(title_key, lang), width="medium")
     def render_editor() -> None:
         prefix = f"strategy_editor_{target}"
         st.caption(tr("simulation.editor_caption", lang))
@@ -476,7 +476,6 @@ def _strategy_editor_dialog(
         if st.button(
             tr("simulation.apply", lang),
             type="primary",
-            width="stretch",
             disabled=not can_apply,
             key=f"{prefix}_apply",
         ):
@@ -679,10 +678,11 @@ def _render_custom_simulator(
             f"{requested_start:%Y-%m-%d} · "
             f"{' · '.join(_plan_rule_parts(primary_plan, lang))}"
         )
-        if primary_action.button(
+        # Right-aligned so the action lines up with the card edge instead of
+        # floating in the middle of an oversized column.
+        if primary_action.container(horizontal_alignment="right").button(
             tr("simulation.edit", lang),
             key="strategy_edit_primary",
-            width="stretch",
         ):
             _prepare_strategy_draft(
                 "primary",
@@ -710,10 +710,12 @@ def _render_custom_simulator(
             secondary_text.markdown(f"**{secondary_plan.name}**")
             secondary_text.caption(_allocation_summary(secondary_plan))
             secondary_text.caption(" · ".join(_plan_rule_parts(secondary_plan, lang)))
-            if secondary_actions.button(
+            secondary_buttons = secondary_actions.container(
+                horizontal_alignment="right"
+            )
+            if secondary_buttons.button(
                 tr("simulation.edit", lang),
                 key="strategy_edit_secondary",
-                width="stretch",
             ):
                 _prepare_strategy_draft(
                     "secondary",
@@ -731,17 +733,15 @@ def _render_custom_simulator(
                     lang,
                     currency,
                 )
-            if secondary_actions.button(
+            if secondary_buttons.button(
                 tr("simulation.remove_second", lang),
                 key="strategy_remove_secondary",
-                width="stretch",
             ):
                 st.session_state.pop(SECONDARY_PLAN_STATE_KEY, None)
                 st.rerun()
         elif st.button(
             tr("simulation.add_second", lang),
             key="strategy_add_secondary",
-            width="stretch",
         ):
             new_plan = PortfolioPlan(
                 name=tr("simulation.second_default", lang),
