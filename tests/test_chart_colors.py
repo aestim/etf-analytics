@@ -67,7 +67,11 @@ def test_dashboard_keeps_beginner_onboarding_and_small_default_comparison():
     assert 'tr("home.intro_title", lang)' in source
     assert '("SPY", "BND", "GLD")' in source
     assert 'line_dash="ticker"' in source
-    assert 'tr("home.nav_ask", lang)' in source
+    assert 'tr("home.compare_title", lang)' in source
+    assert 'tr("home.add_etf", lang)' in source
+    assert 'tr("home.tab_price", lang)' in source
+    assert 'tr("home.tab_return", lang)' in source
+    assert 'tr("home.tab_risk", lang)' in source
 
 
 def test_entrypoint_uses_session_preserving_navigation():

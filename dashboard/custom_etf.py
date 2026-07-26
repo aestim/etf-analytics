@@ -20,6 +20,7 @@ CUSTOM_ETF_STATE_KEY = "custom_etf_prices"
 MAX_CUSTOM_ETFS = 5
 MIN_PRICE_ROWS = 30
 MAX_SEARCH_RESULTS = 8
+MAX_SEARCH_CANDIDATES = 20
 MAX_SEARCH_QUERY_LENGTH = 160
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,19}$")
 ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
@@ -325,13 +326,17 @@ def add_candidate_volumes(
     volumes: dict[str, float],
     *,
     query: str,
+    sort_mode: str = "relevance",
 ) -> tuple[InstrumentCandidate, ...]:
-    """Attach recent volume and sort within relevance groups by liquidity.
+    """Attach recent volume and apply an explicit result ordering.
 
-    A full Yahoo symbol remains pinned first. Missing volume values retain
-    their relevance order at the end of the result list.
+    ``relevance`` keeps text/share-class intent ahead of liquidity. ``volume``
+    orders the primary share-class pool by recent average daily volume.
+    A full Yahoo symbol remains pinned first in either mode.
     """
 
+    if sort_mode not in {"relevance", "volume"}:
+        raise ValueError(f"Unsupported search sort mode: {sort_mode}")
     query_symbol = _symbol_shaped_query(query)
     requested_terms = _canonical_search_terms(query)
     requested_share_classes = requested_terms & {"ACC", "DIST"}
@@ -342,8 +347,42 @@ def add_candidate_volumes(
         )
         for candidate in candidates
     )
+    ranked_pool = enriched
+    if sort_mode == "volume" and requested_share_classes:
+        share_class_matches = tuple(
+            candidate
+            for candidate in enriched
+            if requested_share_classes
+            & _canonical_search_terms(candidate.display_name)
+        )
+        if "ACC" in requested_share_classes:
+            share_class_matches += tuple(
+                candidate
+                for candidate in enriched
+                if candidate not in share_class_matches
+                and "UCITS"
+                in _canonical_search_terms(candidate.display_name)
+            )
+        if share_class_matches:
+            ranked_pool = share_class_matches
+
+    if sort_mode == "volume":
+        ranked = sorted(
+            enumerate(ranked_pool),
+            key=lambda item: (
+                0
+                if query_symbol is not None
+                and item[1].symbol == query_symbol
+                else 1,
+                0 if item[1].average_daily_volume is not None else 1,
+                -(item[1].average_daily_volume or 0.0),
+                item[0],
+            ),
+        )
+        return tuple(candidate for _, candidate in ranked)
+
     ranked = sorted(
-        enumerate(enriched),
+        enumerate(ranked_pool),
         key=lambda item: (
             0
             if query_symbol is not None
@@ -379,6 +418,7 @@ def search_instruments(
     search_factory: Callable[..., Any] | None = None,
     volume_loader: Callable[[tuple[str, ...]], dict[str, float]] | None = None,
     max_results: int = MAX_SEARCH_RESULTS,
+    sort_mode: str = "relevance",
 ) -> tuple[InstrumentCandidate, ...]:
     """Search Yahoo for names, ISINs or symbols and return selection candidates."""
 
@@ -392,13 +432,18 @@ def search_instruments(
     if volume_loader is None and use_default_search:
         volume_loader = fetch_average_daily_volumes
 
+    if sort_mode not in {"relevance", "volume"}:
+        raise ValueError(f"Unsupported search sort mode: {sort_mode}")
     result_limit = max(1, min(int(max_results), MAX_SEARCH_RESULTS))
+    provider_limit = MAX_SEARCH_CANDIDATES
     combined_quotes: list[dict[str, Any]] = []
+    successful_searches = 0
+    first_error: Exception | None = None
     for provider_query in query_variants:
         try:
             search = search_factory(
                 provider_query,
-                max_results=result_limit,
+                max_results=provider_limit,
                 news_count=0,
                 lists_count=0,
                 include_cb=False,
@@ -414,29 +459,36 @@ def search_instruments(
             if not isinstance(quotes, (list, tuple)):
                 raise TypeError("Yahoo Search.quotes was not a list or tuple")
         except Exception as exc:
-            raise InstrumentSearchError(normalized_query) from exc
+            if first_error is None:
+                first_error = exc
+            continue
+        successful_searches += 1
         if quotes:
             combined_quotes.extend(
                 quote for quote in quotes if isinstance(quote, dict)
             )
 
-    candidates = normalize_search_results(
+    if successful_searches == 0 and first_error is not None:
+        raise InstrumentSearchError(normalized_query) from first_error
+
+    candidate_pool = normalize_search_results(
         combined_quotes,
         query=normalized_query,
-    )[:result_limit]
-    if not candidates or volume_loader is None:
-        return candidates
+    )[:MAX_SEARCH_CANDIDATES]
+    if not candidate_pool or volume_loader is None:
+        return candidate_pool[:result_limit]
     try:
         volumes = volume_loader(
-            tuple(candidate.symbol for candidate in candidates)
+            tuple(candidate.symbol for candidate in candidate_pool)
         )
     except Exception:
         volumes = {}
     return add_candidate_volumes(
-        candidates,
+        candidate_pool,
         volumes,
         query=normalized_query,
-    )
+        sort_mode=sort_mode,
+    )[:result_limit]
 
 
 def direct_symbol_candidate(query: str) -> InstrumentCandidate | None:

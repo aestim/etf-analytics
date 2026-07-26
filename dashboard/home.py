@@ -64,17 +64,22 @@ def cached_custom_history(ticker: str) -> pd.DataFrame:
     return fetch_price_history(ticker)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_instrument_search(query: str) -> tuple[InstrumentCandidate, ...]:
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_instrument_search(
+    query: str,
+    sort_mode: str,
+) -> tuple[InstrumentCandidate, ...]:
     """Cache public Yahoo results while keeping user choices session-specific."""
 
-    return search_instruments(query)
+    return search_instruments(query, sort_mode=sort_mode)
 
 
 SEARCH_QUERY_KEY = "custom_etf_search_query"
 SEARCH_RESULTS_KEY = "custom_etf_search_results"
 SEARCH_DIRECT_FALLBACK_KEY = "custom_etf_direct_fallback"
 SEARCH_GENERATION_KEY = "custom_etf_search_generation"
+SEARCH_SORT_KEY = "custom_etf_search_sort"
+SEARCH_FLASH_KEY = "custom_etf_flash"
 HOME_SELECTED_TICKERS_KEY = "home_selected_tickers"
 
 
@@ -83,12 +88,14 @@ def _store_search_state(
     candidates: tuple[InstrumentCandidate, ...],
     *,
     direct_fallback: bool,
+    sort_mode: str = "relevance",
 ) -> None:
     """Replace the search state for the current query."""
 
     st.session_state[SEARCH_QUERY_KEY] = query
     st.session_state[SEARCH_RESULTS_KEY] = candidates
     st.session_state[SEARCH_DIRECT_FALLBACK_KEY] = direct_fallback
+    st.session_state[SEARCH_SORT_KEY] = sort_mode
     generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
     st.session_state[SEARCH_GENERATION_KEY] = generation + 1
 
@@ -156,7 +163,7 @@ def _add_custom_symbol(
     ticker: str,
     returns_df: pd.DataFrame,
     lang: Language,
-) -> None:
+) -> bool:
     """Fetch only the selected symbol, then add it to this session."""
 
     try:
@@ -164,54 +171,75 @@ def _add_custom_symbol(
         built_in = set(returns_df["ticker"].dropna().astype(str))
         if normalized_ticker in built_in:
             _select_ticker_for_charts(normalized_ticker)
-            st.info(
-                tr(
-                    "custom.already_available",
-                    lang,
-                    ticker=normalized_ticker,
-                )
+            st.session_state[SEARCH_FLASH_KEY] = tr(
+                "custom.already_available",
+                lang,
+                ticker=normalized_ticker,
             )
-            return
+            return True
         with st.spinner(
             tr("custom.loading", lang, ticker=normalized_ticker)
         ):
             prices = cached_custom_history(normalized_ticker)
         add_session_prices(st.session_state, prices)
         _select_ticker_for_charts(normalized_ticker)
-        st.success(tr("custom.added", lang, ticker=normalized_ticker))
+        st.session_state[SEARCH_FLASH_KEY] = tr(
+            "custom.added",
+            lang,
+            ticker=normalized_ticker,
+        )
+        return True
     except IsinNotSupportedError:
         st.error(tr("custom.isin_error", lang))
     except InvalidTickerError:
         st.error(tr("custom.invalid_ticker", lang))
     except DuplicateTickerError as exc:
         _select_ticker_for_charts(str(exc))
-        st.info(tr("custom.duplicate", lang, ticker=str(exc)))
+        st.session_state[SEARCH_FLASH_KEY] = tr(
+            "custom.duplicate",
+            lang,
+            ticker=str(exc),
+        )
+        return True
     except CustomEtfLimitError:
         st.error(tr("custom.limit", lang))
     except InsufficientHistoryError as exc:
         st.error(tr("custom.insufficient", lang, ticker=str(exc)))
     except PriceDataUnavailableError as exc:
         st.error(tr("custom.unavailable", lang, ticker=str(exc)))
+    return False
 
 
-def custom_etf_controls(
-    returns_df: pd.DataFrame,
+def custom_etf_dialog(
+    base_returns_df: pd.DataFrame,
     lang: Language,
-) -> pd.DataFrame:
-    """Render add/remove controls and return this session's custom prices."""
+) -> None:
+    """Open the session ETF search and management dialog."""
 
-    with st.expander(tr("custom.title", lang)):
+    @st.dialog(tr("custom.dialog_title", lang), width="large")
+    def render_dialog() -> None:
         st.caption(tr("custom.help", lang))
         with st.form("custom_etf_search_form"):
-            input_col, search_col = st.columns(
-                [5, 1],
-                vertical_alignment="bottom",
-            )
-            raw_query = input_col.text_input(
+            raw_query = st.text_input(
                 tr("custom.input_label", lang),
                 placeholder=tr("custom.input_placeholder", lang),
+                value=st.session_state.get(SEARCH_QUERY_KEY, ""),
+                key="custom_etf_dialog_query",
             )
-            submitted = search_col.form_submit_button(
+            sort_mode = st.segmented_control(
+                tr("custom.sort_label", lang),
+                options=["relevance", "volume"],
+                default=st.session_state.get(
+                    SEARCH_SORT_KEY,
+                    "relevance",
+                ),
+                format_func=lambda value: tr(
+                    f"custom.sort_{value}",
+                    lang,
+                ),
+                key="custom_etf_dialog_sort",
+            )
+            submitted = st.form_submit_button(
                 tr("custom.search", lang),
                 type="primary",
                 width="stretch",
@@ -220,8 +248,16 @@ def custom_etf_controls(
         if submitted:
             try:
                 query = normalize_search_query(raw_query)
+                resolved_sort = (
+                    sort_mode
+                    if sort_mode in {"relevance", "volume"}
+                    else "relevance"
+                )
                 with st.spinner(tr("custom.searching", lang)):
-                    candidates = cached_instrument_search(query)
+                    candidates = cached_instrument_search(
+                        query,
+                        resolved_sort,
+                    )
                 direct_fallback = False
                 if not candidates:
                     direct = direct_symbol_candidate(query)
@@ -232,6 +268,7 @@ def custom_etf_controls(
                     query,
                     candidates,
                     direct_fallback=direct_fallback,
+                    sort_mode=resolved_sort,
                 )
             except InvalidSearchQueryError:
                 _store_search_state("", (), direct_fallback=False)
@@ -253,18 +290,13 @@ def custom_etf_controls(
         search_query = st.session_state.get(SEARCH_QUERY_KEY, "")
         candidates = st.session_state.get(SEARCH_RESULTS_KEY, ())
         direct_fallback = st.session_state.get(
-            SEARCH_DIRECT_FALLBACK_KEY, False
+            SEARCH_DIRECT_FALLBACK_KEY,
+            False,
         )
+        result_sort = st.session_state.get(SEARCH_SORT_KEY, "relevance")
         if isinstance(candidates, tuple) and candidates:
             if direct_fallback:
                 st.info(tr("custom.direct_fallback", lang))
-                st.caption(
-                    tr(
-                        "custom.try_exact_symbol",
-                        lang,
-                        symbol=candidates[0].symbol,
-                    )
-                )
             else:
                 st.caption(
                     tr(
@@ -274,13 +306,23 @@ def custom_etf_controls(
                         count=len(candidates),
                     )
                 )
-            if looks_like_isin(search_query):
-                st.warning(tr("custom.verify_isin", lang))
+            if result_sort == "volume" and not any(
+                candidate.average_daily_volume is not None
+                for candidate in candidates
+            ):
+                st.warning(tr("custom.volume_unavailable_notice", lang))
             else:
-                st.caption(tr("custom.verify_listing", lang))
-            st.caption(tr("custom.volume_sort_notice", lang))
+                st.caption(
+                    tr(
+                        f"custom.sort_notice_{result_sort}",
+                        lang,
+                    )
+                )
             generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
-            for candidate in candidates:
+
+            def render_candidate_card(
+                candidate: InstrumentCandidate,
+            ) -> None:
                 with st.container(border=True):
                     identity_col, action_col = st.columns(
                         [8, 1],
@@ -298,37 +340,203 @@ def custom_etf_controls(
                             f"{generation}_{candidate.symbol}"
                         ),
                         width="stretch",
+                    ) and _add_custom_symbol(
+                        candidate.symbol,
+                        base_returns_df,
+                        lang,
                     ):
-                        _add_custom_symbol(
-                            candidate.symbol,
-                            returns_df,
-                            lang,
-                        )
+                        st.rerun()
+
+            for candidate in candidates[:5]:
+                render_candidate_card(candidate)
+            if len(candidates) > 5:
+                show_all_key = f"custom_etf_show_all_{generation}"
+                show_all = bool(st.session_state.get(show_all_key, False))
+                if not show_all and st.button(
+                    tr(
+                        "custom.show_more",
+                        lang,
+                        count=len(candidates) - 5,
+                    ),
+                    key=f"show_more_custom_etfs_{generation}",
+                    width="stretch",
+                ):
+                    st.session_state[show_all_key] = True
+                    show_all = True
+                if show_all:
+                    for candidate in candidates[5:]:
+                        render_candidate_card(candidate)
         elif search_query:
             st.info(tr("custom.no_results", lang))
 
         tickers = session_tickers(st.session_state)
         if tickers:
-            st.caption(tr("custom.current", lang))
-            for ticker in tickers:
-                label_col, remove_col = st.columns([4, 1])
-                label_col.code(ticker)
-                if remove_col.button(
-                    tr("custom.remove", lang),
-                    key=f"remove_custom_{ticker}",
-                ):
-                    remove_session_ticker(st.session_state, ticker)
-                    _unselect_ticker_for_charts(ticker)
-                    st.rerun()
-            if st.button(tr("custom.clear", lang), key="clear_custom_etfs"):
+            with st.expander(
+                tr(
+                    "custom.current_count",
+                    lang,
+                    count=len(tickers),
+                    limit=5,
+                )
+            ):
                 for ticker in tickers:
-                    _unselect_ticker_for_charts(ticker)
-                clear_session_prices(st.session_state)
-                st.rerun()
-        st.caption(tr("custom.session_notice", lang))
-        st.caption(tr("custom.currency_notice", lang))
+                    label_col, remove_col = st.columns([4, 1])
+                    label_col.code(ticker)
+                    if remove_col.button(
+                        tr("custom.remove", lang),
+                        key=f"remove_custom_{ticker}",
+                        width="stretch",
+                    ):
+                        remove_session_ticker(st.session_state, ticker)
+                        _unselect_ticker_for_charts(ticker)
+                        st.rerun()
+                if st.button(
+                    tr("custom.clear", lang),
+                    key="clear_custom_etfs",
+                ):
+                    for ticker in tickers:
+                        _unselect_ticker_for_charts(ticker)
+                    clear_session_prices(st.session_state)
+                    st.rerun()
 
-    return session_prices(st.session_state)
+        with st.expander(tr("custom.search_notes", lang)):
+            if looks_like_isin(search_query):
+                st.warning(tr("custom.verify_isin", lang))
+            else:
+                st.caption(tr("custom.verify_listing", lang))
+            st.caption(tr("custom.session_notice", lang))
+            st.caption(tr("custom.currency_notice", lang))
+
+    render_dialog()
+
+
+def render_compare_selector(
+    returns_df: pd.DataFrame,
+    base_returns_df: pd.DataFrame,
+    lang: Language,
+) -> list[str]:
+    """Render one compact selection surface for built-in and session ETFs."""
+
+    tickers = sorted(returns_df["ticker"].unique())
+    defaults = [ticker for ticker in ("SPY", "BND", "GLD") if ticker in tickers]
+    stored_selection = st.session_state.get(HOME_SELECTED_TICKERS_KEY)
+    if isinstance(stored_selection, (list, tuple)):
+        valid_selection = [
+            ticker for ticker in stored_selection if ticker in tickers
+        ]
+    else:
+        valid_selection = defaults
+    if st.session_state.get(HOME_SELECTED_TICKERS_KEY) != valid_selection:
+        st.session_state[HOME_SELECTED_TICKERS_KEY] = valid_selection
+
+    st.subheader(tr("home.compare_title", lang))
+    with st.container(border=True):
+        selection_col, add_col = st.columns(
+            [5, 1],
+            vertical_alignment="bottom",
+        )
+        selected = selection_col.multiselect(
+            tr("home.select_etfs", lang),
+            tickers,
+            key=HOME_SELECTED_TICKERS_KEY,
+        )
+        if add_col.button(
+            tr("home.add_etf", lang),
+            type="primary",
+            width="stretch",
+        ):
+            custom_etf_dialog(base_returns_df, lang)
+        st.caption(tr("home.compare_help", lang))
+    return selected
+
+
+def render_ticker_guide(lang: Language) -> None:
+    """Render the reference universe as optional, secondary information."""
+
+    with st.expander(tr("home.ticker_guide", lang)):
+        try:
+            dim = load_dim_etf()
+            display_dim = dim.drop(columns=["description"]).copy()
+            if lang == "ko":
+                display_dim["asset_class"] = display_dim[
+                    "asset_class"
+                ].replace(ASSET_LABELS_KO)
+                display_dim["sub_class"] = display_dim["sub_class"].replace(
+                    SUBCLASS_LABELS_KO
+                )
+            st.dataframe(
+                display_dim,
+                width=dataframe_width(display_dim),
+                row_height=DATAFRAME_ROW_HEIGHT,
+                hide_index=True,
+                column_config={
+                    "ticker": st.column_config.TextColumn(
+                        tr("home.ticker", lang),
+                        alignment="left",
+                    ),
+                    "name": st.column_config.TextColumn(
+                        tr("home.fund_name", lang),
+                        alignment="left",
+                    ),
+                    "asset_class": st.column_config.TextColumn(
+                        tr("home.asset_class", lang),
+                        help=tr("home.asset_class_help", lang),
+                        alignment="left",
+                    ),
+                    "sub_class": st.column_config.TextColumn(
+                        tr("home.sub_class", lang),
+                        help=tr("home.sub_class_help", lang),
+                        alignment="left",
+                    ),
+                    "leverage": st.column_config.NumberColumn(
+                        tr("home.leverage", lang),
+                        help=tr("home.leverage_help", lang),
+                        alignment="right",
+                    ),
+                },
+            )
+            pick = st.selectbox(
+                tr("home.detail_select", lang),
+                dim["ticker"],
+            )
+            row = dim.set_index("ticker").loc[pick]
+            leverage = (
+                (
+                    f" · 일간 {int(row['leverage'])}배"
+                    if lang == "ko"
+                    else f" · {int(row['leverage'])}x daily"
+                )
+                if row["leverage"] > 1
+                else ""
+            )
+            asset_class = (
+                ASSET_LABELS_KO.get(
+                    row["asset_class"],
+                    row["asset_class"],
+                )
+                if lang == "ko"
+                else row["asset_class"]
+            )
+            sub_class = (
+                SUBCLASS_LABELS_KO.get(
+                    row["sub_class"],
+                    row["sub_class"],
+                )
+                if lang == "ko"
+                else row["sub_class"]
+            )
+            description = (
+                TICKER_DESCRIPTIONS_KO.get(pick, row["description"])
+                if lang == "ko"
+                else row["description"]
+            )
+            st.info(
+                f"**{pick} — {row['name']}**  \n"
+                f"`{asset_class} / {sub_class}`{leverage}\n\n"
+                f"{description}"
+            )
+        except Exception:
+            st.caption(tr("home.dim_missing", lang))
 
 
 def line_chart(
@@ -381,20 +589,8 @@ lang = current_language()
 st.title("ETF Analytics")
 st.caption(tr("home.subtitle", lang))
 
-with st.expander(tr("home.intro_title", lang), expanded=True):
-    st.markdown(tr("home.intro_body", lang))
-
-with st.expander(tr("home.technical_title", lang)):
-    st.caption(tr("home.technical_body", lang))
-
-nav_col1, nav_col2 = st.columns(2)
-with nav_col1:
-    st.page_link("pages/1_Strategy_Lab.py", label=tr("home.nav_strategy", lang))
-with nav_col2:
-    st.page_link("pages/2_Ask.py", label=tr("home.nav_ask", lang))
-
 try:
-    returns_df = load_mart_returns()
+    base_returns_df = load_mart_returns()
     risk_df = load_mart_risk()
 except Exception as exc:
     st.error(tr("home.data_error", lang))
@@ -404,110 +600,31 @@ except Exception as exc:
 
 demo_mode_banner(lang)
 
-custom_prices = custom_etf_controls(returns_df, lang)
-returns_df, merged_risk = merge_custom_data(returns_df, risk_df, custom_prices)
+custom_prices = session_prices(st.session_state)
+returns_df, merged_risk = merge_custom_data(
+    base_returns_df,
+    risk_df,
+    custom_prices,
+)
 if merged_risk is not None:
     risk_df = merged_risk
 
-with st.expander(tr("home.ticker_guide", lang)):
-    try:
-        dim = load_dim_etf()
-        display_dim = dim.drop(columns=["description"]).copy()
-        if lang == "ko":
-            display_dim["asset_class"] = display_dim["asset_class"].replace(
-                ASSET_LABELS_KO
-            )
-            display_dim["sub_class"] = display_dim["sub_class"].replace(
-                SUBCLASS_LABELS_KO
-            )
-        st.dataframe(
-            display_dim,
-            width=dataframe_width(display_dim),
-            row_height=DATAFRAME_ROW_HEIGHT,
-            hide_index=True,
-            column_config={
-                "ticker": st.column_config.TextColumn(
-                    tr("home.ticker", lang), alignment="left"
-                ),
-                "name": st.column_config.TextColumn(
-                    tr("home.fund_name", lang), alignment="left"
-                ),
-                "asset_class": st.column_config.TextColumn(
-                    tr("home.asset_class", lang),
-                    help=tr("home.asset_class_help", lang),
-                    alignment="left",
-                ),
-                "sub_class": st.column_config.TextColumn(
-                    tr("home.sub_class", lang),
-                    help=tr("home.sub_class_help", lang),
-                    alignment="left",
-                ),
-                "leverage": st.column_config.NumberColumn(
-                    tr("home.leverage", lang),
-                    help=tr("home.leverage_help", lang),
-                    alignment="right",
-                ),
-            },
-        )
-        pick = st.selectbox(tr("home.detail_select", lang), dim["ticker"])
-        row = dim.set_index("ticker").loc[pick]
-        lev = (
-            (
-                f" · 일간 {int(row['leverage'])}배"
-                if lang == "ko"
-                else f" · {int(row['leverage'])}x daily"
-            )
-            if row["leverage"] > 1
-            else ""
-        )
-        asset_class = (
-            ASSET_LABELS_KO.get(row["asset_class"], row["asset_class"])
-            if lang == "ko"
-            else row["asset_class"]
-        )
-        sub_class = (
-            SUBCLASS_LABELS_KO.get(row["sub_class"], row["sub_class"])
-            if lang == "ko"
-            else row["sub_class"]
-        )
-        description = (
-            TICKER_DESCRIPTIONS_KO.get(pick, row["description"])
-            if lang == "ko"
-            else row["description"]
-        )
-        st.info(
-            f"**{pick} — {row['name']}**  \n"
-            f"`{asset_class} / {sub_class}`{lev}\n\n{description}"
-        )
-    except Exception:
-        st.caption(tr("home.dim_missing", lang))
-
 tickers = sorted(returns_df["ticker"].unique())
 COLORS = ticker_color_map(tickers)  # stable palette across all charts
-beginner_defaults = [ticker for ticker in ("SPY", "BND", "GLD") if ticker in tickers]
-stored_selection = st.session_state.get(HOME_SELECTED_TICKERS_KEY)
-if isinstance(stored_selection, (list, tuple)):
-    valid_selection = [
-        ticker for ticker in stored_selection if ticker in tickers
-    ]
-else:
-    valid_selection = beginner_defaults
-if st.session_state.get(HOME_SELECTED_TICKERS_KEY) != valid_selection:
-    st.session_state[HOME_SELECTED_TICKERS_KEY] = valid_selection
-selected = st.multiselect(
-    tr("home.select_etfs", lang),
-    tickers,
-    key=HOME_SELECTED_TICKERS_KEY,
+flash_message = st.session_state.pop(SEARCH_FLASH_KEY, None)
+if isinstance(flash_message, str) and flash_message:
+    st.toast(flash_message, icon="✅")
+
+selected = render_compare_selector(
+    returns_df,
+    base_returns_df,
+    lang,
 )
 if not selected:
     st.info(tr("home.empty_selection", lang))
 filtered = returns_df[returns_df["ticker"].isin(selected)]
 risk_filtered = risk_df[risk_df["ticker"].isin(selected)]
 comparison = build_indexed_price_comparison(filtered)
-show_raw_prices = st.toggle(
-    tr("home.show_raw_prices", lang),
-    help=tr("home.show_raw_prices_help", lang),
-)
 comparison_start = (
     comparison["price_date"].min().strftime("%Y-%m-%d")
     if not comparison.empty
@@ -516,9 +633,19 @@ comparison_start = (
 if selected and comparison.empty:
     st.warning(tr("home.no_common_dates", lang))
 
-col1, col2 = st.columns(2)
+price_tab, return_tab, risk_tab = st.tabs(
+    [
+        tr("home.tab_price", lang),
+        tr("home.tab_return", lang),
+        tr("home.tab_risk", lang),
+    ]
+)
 
-with col1:
+with price_tab:
+    show_raw_prices = st.toggle(
+        tr("home.show_raw_prices", lang),
+        help=tr("home.show_raw_prices_help", lang),
+    )
     if show_raw_prices:
         st.subheader(tr("home.adjusted_price", lang))
         st.caption(tr("home.adjusted_price_caption", lang))
@@ -534,7 +661,7 @@ with col1:
         )
         line_chart(comparison, "indexed_price", lang, COLORS)
 
-with col2:
+with return_tab:
     st.subheader(tr("home.cumulative_return", lang))
     st.caption(
         tr(
@@ -547,46 +674,57 @@ with col2:
     cum["cum_return"] = cum["indexed_price"] / 100.0 - 1.0
     line_chart(cum, "cum_return", lang, COLORS)
 
-st.subheader(tr("home.volatility", lang))
-st.caption(tr("home.volatility_caption", lang))
-line_chart(risk_filtered, "rolling_vol_30d", lang, COLORS)
+with risk_tab:
+    st.subheader(tr("home.volatility", lang))
+    st.caption(tr("home.volatility_caption", lang))
+    line_chart(risk_filtered, "rolling_vol_30d", lang, COLORS)
 
-st.subheader(tr("home.latest", lang))
-latest = (
-    risk_filtered.sort_values("price_date")
-    .groupby("ticker", as_index=False)
-    .tail(1)[["ticker", "price_date", "rolling_vol_30d", "drawdown"]]
-)
-latest["price_date"] = latest["price_date"].dt.strftime("%Y-%m-%d")
-latest["rolling_vol_30d"] = latest["rolling_vol_30d"].round(4)
-latest["drawdown"] = latest["drawdown"].round(4)
+    st.subheader(tr("home.latest", lang))
+    latest = (
+        risk_filtered.sort_values("price_date")
+        .groupby("ticker", as_index=False)
+        .tail(1)[["ticker", "price_date", "rolling_vol_30d", "drawdown"]]
+    )
+    latest["price_date"] = latest["price_date"].dt.strftime("%Y-%m-%d")
+    latest["rolling_vol_30d"] = latest["rolling_vol_30d"].round(4)
+    latest["drawdown"] = latest["drawdown"].round(4)
 
-st.dataframe(
-    latest,
-    width=dataframe_width(latest),
-    row_height=DATAFRAME_ROW_HEIGHT,
-    hide_index=True,
-    column_config={
-        "rolling_vol_30d": st.column_config.NumberColumn(
-            tr("home.volatility", lang),
-            help=glossary_help("rolling_vol_30d", lang),
-            format="percent",
-            alignment="right",
-        ),
-        "drawdown": st.column_config.NumberColumn(
-            tr("home.drawdown", lang),
-            help=glossary_help("drawdown", lang),
-            format="percent",
-            alignment="right",
-        ),
-        "ticker": st.column_config.TextColumn(
-            tr("home.ticker", lang), alignment="left"
-        ),
-        "price_date": st.column_config.TextColumn(
-            tr("home.as_of_date", lang), alignment="left"
-        ),
-    },
-)
+    st.dataframe(
+        latest,
+        width=dataframe_width(latest),
+        row_height=DATAFRAME_ROW_HEIGHT,
+        hide_index=True,
+        column_config={
+            "rolling_vol_30d": st.column_config.NumberColumn(
+                tr("home.volatility", lang),
+                help=glossary_help("rolling_vol_30d", lang),
+                format="percent",
+                alignment="right",
+            ),
+            "drawdown": st.column_config.NumberColumn(
+                tr("home.drawdown", lang),
+                help=glossary_help("drawdown", lang),
+                format="percent",
+                alignment="right",
+            ),
+            "ticker": st.column_config.TextColumn(
+                tr("home.ticker", lang),
+                alignment="left",
+            ),
+            "price_date": st.column_config.TextColumn(
+                tr("home.as_of_date", lang),
+                alignment="left",
+            ),
+        },
+    )
+
+with st.expander(tr("home.intro_title", lang)):
+    st.markdown(tr("home.intro_body", lang))
+
+render_ticker_guide(lang)
+
+with st.expander(tr("home.technical_title", lang)):
+    st.caption(tr("home.technical_body", lang))
 
 glossary_expander(
     ["adj_close", "cum_return", "rolling_vol_30d", "drawdown"],

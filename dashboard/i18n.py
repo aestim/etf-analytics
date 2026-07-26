@@ -99,6 +99,18 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Choose ETFs to compare",
         "ko": "비교할 ETF 선택",
     },
+    "home.compare_title": {
+        "en": "Compare ETFs",
+        "ko": "ETF 비교",
+    },
+    "home.add_etf": {
+        "en": "＋ Add ETF",
+        "ko": "＋ ETF 추가",
+    },
+    "home.compare_help": {
+        "en": "This selection controls every chart tab. Add a new Yahoo listing without leaving this section.",
+        "ko": "이 선택이 모든 차트 탭에 적용됩니다. 이 영역에서 바로 새 Yahoo 상장 종목을 추가할 수 있습니다.",
+    },
     "home.empty_selection": {
         "en": "Select at least one ETF to display the charts.",
         "ko": "차트를 보려면 ETF를 하나 이상 골라주세요.",
@@ -106,6 +118,10 @@ COPY: dict[str, dict[Language, str]] = {
     "custom.title": {
         "en": "🔎 Find and add an ETF for this session",
         "ko": "🔎 현재 세션에 추가할 ETF 찾기",
+    },
+    "custom.dialog_title": {
+        "en": "Find an ETF",
+        "ko": "ETF 찾기",
     },
     "custom.help": {
         "en": "Search by ETF name, ISIN or ticker, then press Add on the exact listing you want. No exchange is selected automatically.",
@@ -120,6 +136,18 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "예: SXRV, Vanguard FTSE All-World 또는 IE00BK5BQT80",
     },
     "custom.search": {"en": "Search", "ko": "검색"},
+    "custom.sort_label": {
+        "en": "Order results",
+        "ko": "결과 정렬",
+    },
+    "custom.sort_relevance": {
+        "en": "Best match",
+        "ko": "관련도순",
+    },
+    "custom.sort_volume": {
+        "en": "Most traded",
+        "ko": "거래량순",
+    },
     "custom.searching": {
         "en": "Searching Yahoo Finance...",
         "ko": "Yahoo Finance에서 검색하는 중...",
@@ -129,6 +157,10 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "`{query}`의 Yahoo 상장 후보: {count}개",
     },
     "custom.add": {"en": "Add", "ko": "추가"},
+    "custom.show_more": {
+        "en": "Show {count} more results",
+        "ko": "결과 {count}개 더 보기",
+    },
     "custom.average_volume": {
         "en": "1-month avg. daily volume: {volume}",
         "ko": "최근 1개월 일평균 거래량: {volume}",
@@ -137,9 +169,17 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "Recent volume unavailable",
         "ko": "최근 거래량 정보 없음",
     },
-    "custom.volume_sort_notice": {
-        "en": "Best text/share-class matches come first; equally relevant listings are ordered by 1-month average daily volume.",
-        "ko": "검색어·share class가 잘 맞는 종목을 먼저 묶고, 같은 관련도 안에서는 1개월 일평균 거래량 순으로 보여줍니다.",
+    "custom.sort_notice_relevance": {
+        "en": "Ordered by ticker, name and share-class match; volume breaks close ties.",
+        "ko": "티커·이름·share class 일치도를 우선하고 비슷한 후보는 거래량으로 정렬합니다.",
+    },
+    "custom.sort_notice_volume": {
+        "en": "Matching share-class listings are ordered by 1-month average daily volume; missing values appear last.",
+        "ko": "share class가 맞는 후보를 1개월 일평균 거래량 순으로 정렬하며 값이 없으면 마지막에 표시합니다.",
+    },
+    "custom.volume_unavailable_notice": {
+        "en": "Recent volume could not be loaded, so these results remain in best-match order.",
+        "ko": "최근 거래량을 불러오지 못해 관련도순으로 표시합니다.",
     },
     "custom.direct_fallback": {
         "en": "Yahoo returned no search candidates. You can still try the exact symbol below.",
@@ -221,6 +261,14 @@ COPY: dict[str, dict[Language, str]] = {
         "en": "ETFs added in this session",
         "ko": "현재 세션에 추가된 ETF",
     },
+    "custom.current_count": {
+        "en": "Session ETFs ({count}/{limit})",
+        "ko": "세션 ETF ({count}/{limit})",
+    },
+    "custom.search_notes": {
+        "en": "Search and data notes",
+        "ko": "검색 및 데이터 안내",
+    },
     "custom.remove": {"en": "Remove", "ko": "삭제"},
     "custom.clear": {"en": "Remove all session ETFs", "ko": "세션 ETF 모두 삭제"},
     "custom.session_notice": {
@@ -264,6 +312,18 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "선택한 ETF끼리 공통 거래일이 없어 기준값 비교를 만들 수 없습니다.",
     },
     "home.cumulative_return": {"en": "Total return", "ko": "누적수익률"},
+    "home.tab_price": {
+        "en": "Indexed growth",
+        "ko": "기준값 성장",
+    },
+    "home.tab_return": {
+        "en": "Total return",
+        "ko": "누적수익률",
+    },
+    "home.tab_risk": {
+        "en": "Risk",
+        "ko": "위험",
+    },
     "home.cumulative_return_caption": {
         "en": "Gain or loss from the same shared start date ({date})",
         "ko": "같은 공통 시작일({date})부터의 수익률입니다",

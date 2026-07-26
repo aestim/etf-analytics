@@ -223,7 +223,7 @@ def test_search_instruments_uses_injected_factory_and_no_market_history_call():
 
     assert [candidate.symbol for candidate in candidates] == ["VWCE.DE"]
     assert calls[0][0] == "Vanguard FTSE All-World"
-    assert calls[0][1]["max_results"] == 8
+    assert calls[0][1]["max_results"] == 20
     assert calls[0][1]["news_count"] == 0
     assert calls[0][1]["timeout"] == 10
 
@@ -347,6 +347,41 @@ def test_candidate_volume_sort_keeps_acc_matches_above_high_volume_income_funds(
     ]
 
 
+def test_candidate_volume_mode_sorts_primary_acc_pool_by_volume():
+    candidates = normalize_search_results(
+        [
+            {
+                "symbol": "QQQI",
+                "longname": "NEOS Nasdaq 100 High Income ETF",
+                "quoteType": "ETF",
+            },
+            {
+                "symbol": "EQQB.DE",
+                "longname": "Invesco EQQQ Nasdaq-100 UCITS ETF Acc",
+                "quoteType": "ETF",
+            },
+            {
+                "symbol": "NQSE.DE",
+                "longname": "iShares Nasdaq 100 UCITS ETF",
+                "quoteType": "ETF",
+            },
+        ],
+        query="NASDAQ 100 acc",
+    )
+
+    ranked = add_candidate_volumes(
+        candidates,
+        {"QQQI": 5_000_000, "EQQB.DE": 3_000, "NQSE.DE": 250_000},
+        query="NASDAQ 100 acc",
+        sort_mode="volume",
+    )
+
+    assert [candidate.symbol for candidate in ranked] == [
+        "NQSE.DE",
+        "EQQB.DE",
+    ]
+
+
 def test_search_instruments_uses_injected_volume_ordering():
     class FakeSearch:
         quotes = [
@@ -400,6 +435,51 @@ def test_fetch_average_daily_volumes_uses_one_batch_and_ignores_zeroes():
     assert volumes == {"LOW.DE": 100.0, "HIGH.DE": 2_000.0}
     assert calls[0][0] == ["LOW.DE", "HIGH.DE"]
     assert calls[0][1]["period"] == "1mo"
+
+
+def test_search_instruments_volume_mode_enriches_before_final_limit():
+    class LargeSearch:
+        quotes = [
+            {
+                "symbol": f"ETF{index}.DE",
+                "longname": f"European UCITS ETF {index}",
+                "quoteType": "ETF",
+            }
+            for index in range(12)
+        ]
+
+    candidates = search_instruments(
+        "European ETF",
+        search_factory=lambda *args, **kwargs: LargeSearch(),
+        volume_loader=lambda symbols: {
+            symbol: (1_000_000 if symbol == "ETF10.DE" else 1)
+            for symbol in symbols
+        },
+        sort_mode="volume",
+    )
+
+    assert len(candidates) == 8
+    assert candidates[0].symbol == "ETF10.DE"
+
+
+def test_search_instruments_keeps_results_when_one_variant_fails():
+    class SearchResult:
+        def __init__(self, quotes):
+            self.quotes = quotes
+
+    def search_factory(query, **kwargs):
+        if query != "NASDAQ 100":
+            raise TimeoutError("one Yahoo variant failed")
+        return SearchResult(
+            [{"symbol": "NQSE.DE", "quoteType": "ETF"}]
+        )
+
+    candidates = search_instruments(
+        "NASDAQ 100 acc",
+        search_factory=search_factory,
+    )
+
+    assert [candidate.symbol for candidate in candidates] == ["NQSE.DE"]
 
 
 def test_search_instruments_maps_provider_failure_and_empty_results():
