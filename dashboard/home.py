@@ -5,7 +5,6 @@ Run after: docker compose up, ingest, dbt run.
 
 from __future__ import annotations
 
-import html
 from dataclasses import replace
 
 import pandas as pd
@@ -37,6 +36,8 @@ from custom_etf import (
     add_session_prices,
     build_custom_marts,
     build_indexed_price_comparison,
+    candidate_identity_html,
+    candidate_volume_html,
     clear_session_prices,
     direct_symbol_candidate,
     fetch_price_history,
@@ -109,6 +110,9 @@ SEARCH_GENERATION_KEY = "custom_etf_search_generation"
 SEARCH_SORT_KEY = "custom_etf_search_sort_v2"
 SEARCH_FLASH_KEY = "custom_etf_flash"
 HOME_SELECTED_TICKERS_KEY = "home_selected_tickers"
+# identity | volume | add button — shared by the header and every result row so
+# the volume figures line up in one scannable column.
+CANDIDATE_ROW_RATIO = [6, 1.4, 1.4]
 
 
 def _store_search_state(
@@ -151,38 +155,12 @@ def _candidate_identity_html(
     candidate: InstrumentCandidate,
     lang: Language,
 ) -> str:
-    """Render provider text as escaped, non-interactive card content."""
+    """Bind the interface language to the pure row renderer."""
 
-    badge = html.escape(candidate.symbol.partition(".")[0][:4])
-    name = html.escape(candidate.display_name)
-    symbol = html.escape(candidate.symbol)
-    exchange = html.escape(candidate.exchange or tr("custom.exchange_unknown", lang))
-    provider_type = html.escape(
-        candidate.provider_type or tr("custom.type_unknown", lang)
-    )
-    currency = html.escape(candidate.currency or tr("custom.currency_unknown", lang))
-    volume = (
-        tr(
-            "custom.average_volume",
-            lang,
-            volume=f"{candidate.average_daily_volume:,.0f}",
-        )
-        if candidate.average_daily_volume is not None
-        else tr("custom.volume_unavailable", lang)
-    )
-    return (
-        "<div style='display:flex;gap:.75rem;align-items:center'>"
-        "<div style='min-width:3rem;height:3rem;border-radius:.75rem;"
-        "display:flex;align-items:center;justify-content:center;"
-        "background:#12a8d8;color:white;font-size:.72rem;font-weight:700'>"
-        f"{badge}</div>"
-        "<div style='min-width:0'>"
-        f"<div style='font-weight:650;line-height:1.25'>{name}</div>"
-        "<div style='opacity:.68;font-size:.82rem;margin-top:.2rem'>"
-        f"{symbol} · {exchange} · {provider_type} · {currency}</div>"
-        "<div style='opacity:.68;font-size:.78rem;margin-top:.16rem'>"
-        f"{html.escape(volume)}</div>"
-        "</div></div>"
+    return candidate_identity_html(
+        candidate,
+        exchange_fallback=tr("custom.exchange_unknown", lang),
+        currency_fallback=tr("custom.currency_unknown", lang),
     )
 
 
@@ -269,30 +247,41 @@ def custom_etf_dialog(
                 value=st.session_state.get(SEARCH_QUERY_KEY, ""),
                 key="custom_etf_dialog_query",
             )
-            sort_mode = st.segmented_control(
-                tr("custom.sort_label", lang),
-                options=["volume", "relevance"],
-                default=st.session_state.get(
-                    SEARCH_SORT_KEY,
-                    "volume",
-                ),
-                format_func=lambda value: tr(
-                    f"custom.sort_{value}",
-                    lang,
-                ),
-                key="custom_etf_dialog_sort",
-            )
             submitted = st.form_submit_button(
                 tr("custom.search", lang),
                 type="primary",
                 width="stretch",
             )
 
-        if submitted:
+        # Deliberately outside the form: a form defers widget values until the
+        # next submit, so changing the order there looked like it did nothing.
+        sort_mode = st.segmented_control(
+            tr("custom.sort_label", lang),
+            options=["volume", "relevance"],
+            default=st.session_state.get(
+                SEARCH_SORT_KEY,
+                "volume",
+            ),
+            format_func=lambda value: tr(
+                f"custom.sort_{value}",
+                lang,
+            ),
+            key="custom_etf_dialog_sort",
+        )
+        resolved_sort = sort_mode if sort_mode in {"relevance", "volume"} else "volume"
+        stored_query = st.session_state.get(SEARCH_QUERY_KEY, "")
+        # Re-order the results the user is already looking at, without asking
+        # them to submit the same query again.
+        sort_changed = (
+            not submitted
+            and bool(stored_query)
+            and resolved_sort != st.session_state.get(SEARCH_SORT_KEY, "volume")
+        )
+
+        if submitted or sort_changed:
             try:
-                query = normalize_search_query(raw_query)
-                resolved_sort = (
-                    sort_mode if sort_mode in {"relevance", "volume"} else "volume"
+                query = normalize_search_query(
+                    raw_query if submitted else stored_query
                 )
                 with st.spinner(tr("custom.searching", lang)):
                     candidates = cached_instrument_search(
@@ -312,9 +301,13 @@ def custom_etf_dialog(
                     sort_mode=resolved_sort,
                 )
             except InvalidSearchQueryError:
-                _store_search_state("", (), direct_fallback=False)
+                _store_search_state(
+                    "", (), direct_fallback=False, sort_mode=resolved_sort
+                )
                 st.error(tr("custom.invalid_query", lang))
             except InstrumentSearchError as exc:
+                # Record the attempted sort too, otherwise the state still holds
+                # the previous mode and this failing search repeats every rerun.
                 query = str(exc)
                 direct = direct_symbol_candidate(query)
                 candidates = (direct,) if direct is not None else ()
@@ -322,6 +315,7 @@ def custom_etf_dialog(
                     query,
                     candidates,
                     direct_fallback=direct is not None,
+                    sort_mode=resolved_sort,
                 )
                 st.error(tr("custom.search_unavailable", lang))
                 with st.expander(tr("home.admin_details", lang)):
@@ -360,49 +354,46 @@ def custom_etf_dialog(
                 )
             generation = st.session_state.get(SEARCH_GENERATION_KEY, 0)
 
-            def render_candidate_card(
+            # One header labels the volume column so each row does not have to
+            # repeat "1-month avg. daily volume" in prose.
+            _heading_identity, heading_volume, _heading_action = st.columns(
+                CANDIDATE_ROW_RATIO,
+                vertical_alignment="bottom",
+            )
+            heading_volume.caption(tr("custom.volume_column", lang))
+
+            def render_candidate_row(
                 candidate: InstrumentCandidate,
             ) -> None:
-                with st.container(border=True):
-                    identity_col, action_col = st.columns(
-                        [8, 1],
-                        vertical_alignment="center",
-                    )
-                    identity_col.markdown(
-                        _candidate_identity_html(candidate, lang),
-                        unsafe_allow_html=True,
-                    )
-                    if action_col.button(
-                        tr("custom.add", lang),
-                        type="primary",
-                        key=(f"add_custom_etf_{generation}_{candidate.symbol}"),
-                        width="stretch",
-                    ) and _add_custom_symbol(
-                        candidate,
-                        base_returns_df,
-                        lang,
-                    ):
-                        st.rerun()
-
-            for candidate in candidates[:5]:
-                render_candidate_card(candidate)
-            if len(candidates) > 5:
-                show_all_key = f"custom_etf_show_all_{generation}"
-                show_all = bool(st.session_state.get(show_all_key, False))
-                if not show_all and st.button(
-                    tr(
-                        "custom.show_more",
-                        lang,
-                        count=len(candidates) - 5,
-                    ),
-                    key=f"show_more_custom_etfs_{generation}",
+                identity_col, volume_col, action_col = st.columns(
+                    CANDIDATE_ROW_RATIO,
+                    vertical_alignment="center",
+                )
+                identity_col.markdown(
+                    _candidate_identity_html(candidate, lang),
+                    unsafe_allow_html=True,
+                )
+                volume_col.markdown(
+                    candidate_volume_html(candidate),
+                    unsafe_allow_html=True,
+                )
+                if action_col.button(
+                    tr("custom.add", lang),
+                    key=(f"add_custom_etf_{generation}_{candidate.symbol}"),
                     width="stretch",
+                ) and _add_custom_symbol(
+                    candidate,
+                    base_returns_df,
+                    lang,
                 ):
-                    st.session_state[show_all_key] = True
-                    show_all = True
-                if show_all:
-                    for candidate in candidates[5:]:
-                        render_candidate_card(candidate)
+                    st.rerun()
+
+            # Yahoo returns at most MAX_SEARCH_RESULTS candidates, which all fit
+            # in this row height — paginating them only added a click.
+            for position, candidate in enumerate(candidates):
+                if position:
+                    st.divider()
+                render_candidate_row(candidate)
         elif search_query:
             st.info(tr("custom.no_results", lang))
 

@@ -165,17 +165,9 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "`{query}`의 Yahoo 상장 후보: {count}개",
     },
     "custom.add": {"en": "Add", "ko": "추가"},
-    "custom.show_more": {
-        "en": "Show {count} more results",
-        "ko": "결과 {count}개 더 보기",
-    },
-    "custom.average_volume": {
-        "en": "1-month avg. daily volume: {volume}",
-        "ko": "최근 1개월 일평균 거래량: {volume}",
-    },
-    "custom.volume_unavailable": {
-        "en": "Recent volume unavailable",
-        "ko": "최근 거래량 정보 없음",
+    "custom.volume_column": {
+        "en": "Avg. daily volume",
+        "ko": "일평균 거래량",
     },
     "custom.sort_notice_relevance": {
         "en": "Ordered by ticker, name and share-class match; volume breaks close ties.",

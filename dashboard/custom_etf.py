@@ -8,6 +8,7 @@ schema.
 
 from __future__ import annotations
 
+import html
 import re
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, replace
@@ -162,6 +163,89 @@ def search_query_variants(value: str) -> tuple[str, ...]:
             extra_query for extra_query in extra_queries if extra_query not in variants
         )
     return tuple(variants)
+
+
+def format_compact_volume(value: float | None) -> str:
+    """Format share counts so a column of them can be compared at a glance.
+
+    Volume is a share count, not money, so it stays currency-free. Returns an
+    em dash when the provider gave no usable figure.
+    """
+
+    if value is None or not np.isfinite(value) or value < 0:
+        return "—"
+    for threshold, suffix in (
+        (1_000_000_000, "B"),
+        (1_000_000, "M"),
+        (1_000, "K"),
+    ):
+        if value >= threshold:
+            return f"{value / threshold:,.1f}{suffix}"
+    return f"{value:,.0f}"
+
+
+def candidate_identity_html(
+    candidate: InstrumentCandidate,
+    *,
+    exchange_fallback: str,
+    currency_fallback: str,
+) -> str:
+    """Render one search result as escaped, non-interactive row markup.
+
+    The symbol leads because that is what the visitor is choosing. Exchange and
+    currency stay because they are what separate two listings of the same fund.
+    The fund type only appears when it is *not* a plain ETF, so the row shows
+    the exception instead of repeating the rule.
+
+    Every provider-supplied string is escaped: this markup is passed to
+    Streamlit with ``unsafe_allow_html=True``.
+    """
+
+    badge = html.escape(candidate.symbol.partition(".")[0][:2])
+    name = html.escape(candidate.display_name)
+    symbol = html.escape(candidate.symbol)
+    listing = " · ".join(
+        html.escape(part)
+        for part in (
+            candidate.exchange or exchange_fallback,
+            candidate.currency or currency_fallback,
+        )
+    )
+    type_pill = ""
+    if candidate.provider_type and candidate.provider_type.upper() != "ETF":
+        type_pill = (
+            "<span style='border:1px solid rgba(250,250,250,.28);"
+            "border-radius:20px;padding:.05rem .45rem;font-size:.72rem;"
+            f"opacity:.82'>{html.escape(candidate.provider_type.title())}</span>"
+        )
+    return (
+        "<div style='display:flex;gap:.7rem;align-items:center;min-width:0'>"
+        "<div style='min-width:2.3rem;height:2.3rem;border-radius:50%;"
+        "display:flex;align-items:center;justify-content:center;"
+        "background:rgba(250,250,250,.09);font-size:.78rem;font-weight:600'>"
+        f"{badge}</div>"
+        "<div style='min-width:0'>"
+        "<div style='display:flex;align-items:baseline;gap:.5rem;"
+        "flex-wrap:wrap'>"
+        f"<span style='font-weight:600;font-family:monospace'>{symbol}</span>"
+        f"<span style='opacity:.62;font-size:.78rem'>{listing}</span>"
+        f"{type_pill}</div>"
+        "<div style='opacity:.78;font-size:.85rem;margin-top:.1rem;"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+        f"{name}</div>"
+        "</div></div>"
+    )
+
+
+def candidate_volume_html(candidate: InstrumentCandidate) -> str:
+    """Render the sort key as its own right-aligned, comparable column."""
+
+    volume = html.escape(format_compact_volume(candidate.average_daily_volume))
+    dim = "" if candidate.average_daily_volume is not None else "opacity:.55;"
+    return (
+        "<div style='text-align:right;font-family:monospace;"
+        f"font-size:.9rem;{dim}'>{volume}</div>"
+    )
 
 
 def looks_like_isin(value: str) -> bool:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,9 +25,12 @@ from custom_etf import (
     build_indexed_price_comparison,
     build_custom_marts,
     candidate_for_symbol,
+    candidate_identity_html,
+    candidate_volume_html,
     direct_symbol_candidate,
     fetch_average_daily_volumes,
     fetch_price_history,
+    format_compact_volume,
     looks_like_isin,
     merge_custom_data,
     normalize_search_query,
@@ -388,6 +394,223 @@ def test_candidate_volume_mode_sorts_primary_acc_pool_by_volume():
         "NQSE.DE",
         "EQQB.DE",
     ]
+
+
+def _dotted_call_name(node: ast.AST) -> str:
+    """Return `st.button` style names for a call node, else an empty string."""
+    if not isinstance(node, ast.Call):
+        return ""
+    target = node.func
+    parts: list[str] = []
+    while isinstance(target, ast.Attribute):
+        parts.append(target.attr)
+        target = target.value
+    if isinstance(target, ast.Name):
+        parts.append(target.id)
+    return ".".join(reversed(parts))
+
+
+def _home_tree() -> ast.Module:
+    home = Path(__file__).resolve().parents[1] / "dashboard" / "home.py"
+    return ast.parse(home.read_text(encoding="utf-8"))
+
+
+def test_search_sort_control_stays_outside_the_search_form():
+    """Inside a form the new value waits for submit, so reordering looks broken."""
+    forms = [
+        node
+        for node in ast.walk(_home_tree())
+        if isinstance(node, ast.With)
+        and any(
+            _dotted_call_name(item.context_expr) == "st.form" for item in node.items
+        )
+    ]
+
+    assert forms, "the custom ETF search form is missing"
+    calls_in_forms = {
+        _dotted_call_name(node)
+        for form in forms
+        for node in ast.walk(form)
+        if isinstance(node, ast.Call)
+    }
+    assert "st.segmented_control" not in calls_in_forms
+
+
+def test_search_results_are_not_paginated():
+    """All MAX_SEARCH_RESULTS candidates fit, so a reveal button only adds a click."""
+    source = (Path(__file__).resolve().parents[1] / "dashboard" / "home.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "custom.show_more" not in source
+    assert "custom_etf_show_all" not in source
+
+
+def test_result_header_and_rows_share_one_column_ratio():
+    """Volume only reads as a column when every row splits the width identically."""
+    tree = _home_tree()
+    shared_ratio_columns = [
+        node
+        for node in ast.walk(tree)
+        if _dotted_call_name(node) == "st.columns"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "CANDIDATE_ROW_RATIO"
+    ]
+
+    assert len(shared_ratio_columns) == 2, "header and result rows must share it"
+    ratio = next(
+        ast.literal_eval(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "CANDIDATE_ROW_RATIO"
+            for target in node.targets
+        )
+    )
+    assert len(ratio) == 3, "identity, volume and action columns"
+
+
+def test_candidate_row_leads_with_the_symbol_and_escapes_provider_text():
+    candidate = InstrumentCandidate(
+        symbol="VUSA.L",
+        display_name="<script>alert(1)</script> Vanguard S&P 500",
+        exchange="London",
+        provider_type="ETF",
+        currency="GBP",
+        average_daily_volume=40_182,
+    )
+
+    markup = candidate_identity_html(
+        candidate, exchange_fallback="Unknown", currency_fallback="Unknown"
+    )
+
+    assert markup.index("VUSA.L") < markup.index("Vanguard")
+    assert "London · GBP" in markup
+    assert "<script>" not in markup
+    assert "&lt;script&gt;" in markup
+    # A plain ETF is the rule here, so it earns no pill of its own.
+    assert "ETF</span>" not in markup
+
+
+def test_candidate_row_flags_only_non_etf_fund_types():
+    mutual_fund = InstrumentCandidate(
+        symbol="SPXP.SW",
+        display_name="Invesco S&P 500 Fund",
+        exchange="Swiss",
+        provider_type="MUTUALFUND",
+        currency="CHF",
+    )
+
+    markup = candidate_identity_html(
+        mutual_fund, exchange_fallback="Unknown", currency_fallback="Unknown"
+    )
+
+    assert "Mutualfund</span>" in markup
+
+
+def test_candidate_row_falls_back_when_the_provider_omits_listing_details():
+    bare = InstrumentCandidate(
+        symbol="AAA", display_name="AAA", exchange="", provider_type=""
+    )
+
+    markup = candidate_identity_html(
+        bare, exchange_fallback="Unknown exchange", currency_fallback="Unknown currency"
+    )
+
+    assert "Unknown exchange · Unknown currency" in markup
+
+
+@pytest.mark.parametrize(
+    "volume,expected",
+    [
+        (None, "—"),
+        (float("nan"), "—"),
+        (0, "0"),
+        (999, "999"),
+        (40_182, "40.2K"),
+        (9_004_551, "9.0M"),
+        (2_500_000_000, "2.5B"),
+    ],
+)
+def test_compact_volume_formatting(volume, expected):
+    assert format_compact_volume(volume) == expected
+
+
+def test_missing_volume_is_dimmed_rather_than_left_blank():
+    known = InstrumentCandidate("AAA", "AAA", "", "", average_daily_volume=1_500)
+    unknown = InstrumentCandidate("BBB", "BBB", "", "")
+
+    assert "1.5K" in candidate_volume_html(known)
+    assert "opacity" not in candidate_volume_html(known)
+    assert "—" in candidate_volume_html(unknown)
+    assert "opacity:.55" in candidate_volume_html(unknown)
+
+
+def test_sort_modes_order_the_same_pool_differently():
+    """The two modes must be distinguishable, not just differently labelled."""
+    quotes = [
+        {
+            "symbol": "SPXS.MI",
+            "longname": "Invesco S&P 500 UCITS ETF",
+            "quoteType": "ETF",
+        },
+        {
+            "symbol": "VUSA.L",
+            "longname": "Vanguard S&P 500 UCITS ETF",
+            "quoteType": "ETF",
+        },
+        {
+            "symbol": "SPXP.SW",
+            "longname": "Invesco S&P 500 Fund",
+            "quoteType": "MUTUALFUND",
+        },
+    ]
+    candidates = normalize_search_results(quotes, query="S&P 500 UCITS ETF")
+    volumes = {"SPXS.MI": 1_000, "VUSA.L": 40_000, "SPXP.SW": 9_000_000}
+
+    by_relevance = add_candidate_volumes(
+        candidates, volumes, query="S&P 500 UCITS ETF", sort_mode="relevance"
+    )
+    by_volume = add_candidate_volumes(
+        candidates, volumes, query="S&P 500 UCITS ETF", sort_mode="volume"
+    )
+
+    # Relevance keeps the name/type match on top; volume promotes the liquid
+    # mutual fund that matches the query text less well.
+    assert [candidate.symbol for candidate in by_relevance] == [
+        "VUSA.L",
+        "SPXS.MI",
+        "SPXP.SW",
+    ]
+    assert [candidate.symbol for candidate in by_volume] == [
+        "SPXP.SW",
+        "VUSA.L",
+        "SPXS.MI",
+    ]
+
+
+def test_sort_modes_collapse_to_one_order_without_volume_data():
+    """Documents why both modes can look identical: no volume, no reordering."""
+    candidates = normalize_search_results(
+        [
+            {"symbol": "AAA.L", "longname": "Alpha UCITS ETF", "quoteType": "ETF"},
+            {"symbol": "BBB.L", "longname": "Beta UCITS ETF", "quoteType": "ETF"},
+        ],
+        query="UCITS ETF",
+    )
+
+    by_relevance = add_candidate_volumes(
+        candidates, {}, query="UCITS ETF", sort_mode="relevance"
+    )
+    by_volume = add_candidate_volumes(
+        candidates, {}, query="UCITS ETF", sort_mode="volume"
+    )
+
+    assert [candidate.symbol for candidate in by_relevance] == [
+        candidate.symbol for candidate in by_volume
+    ]
+    assert all(candidate.average_daily_volume is None for candidate in by_volume)
 
 
 def test_search_instruments_uses_injected_volume_ordering():
