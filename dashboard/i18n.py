@@ -822,13 +822,29 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "- 배당 반영 과거 가격에는 ETF 운용보수, 배당, 주식 분할의 영향이 이미 들어 있으며 조정 가격이 없는 상장 종목은 거부합니다.\n- 포트폴리오를 계산하기 전에 모든 상장 가격을 과거 일별 환율로 선택한 기준통화로 변환합니다.\n- 소수점 단위 매수를 허용하고 대기 현금의 이자는 0%로 가정합니다.\n- 200일 추세 지표는 비교 시작 전 데이터를 워밍업에 사용하고, 종가로 확인한 신호는 다음 관측일에 체결합니다.\n- 나눠 투자하는 동안 리밸런싱은 이미 투자된 금액에만 적용하며, 남은 현금은 정한 매수 일정에 따라 투자합니다.\n- 미국과 유럽 거래일이 섞일 수 있으므로 실제 공통 관측일의 연간 빈도로 변동성을 연환산합니다.\n- 거래 수수료, 세금, 슬리피지 및 환전 비용은 제외합니다.\n- 과거 데이터를 이용한 학습용 전략 시뮬레이터이며 퀀트급 체결 모형, 미래 예측 또는 투자 추천이 아닙니다.",
     },
     "ask.title": {"en": "💬 Ask About ETFs", "ko": "💬 ETF 정보 물어보기"},
+    # The language toggle sits in the sidebar and the answer follows the
+    # question's language, so the page does not announce it in prose.
     "ask.subtitle": {
-        "en": "Ask in English or Korean about ETF and basic investing terms, or explore historical prices, returns, trading value, price swings, and drawdowns. This tool does not predict future returns or provide personal investment advice.",
-        "ko": "ETF와 기초 투자 용어의 뜻을 물어보거나 과거 가격, 수익률, 거래대금, 가격 변동, 하락 폭을 살펴보세요. 한국어와 영어 모두 사용할 수 있습니다. 미래 수익을 예측하거나 개인 투자 조언을 하지는 않습니다.",
+        "en": "Ask what a term means, or explore past prices, returns, volatility and drawdowns. Not a forecast, and not investment advice.",
+        "ko": "용어의 뜻을 묻거나 과거 가격·수익률·변동성·낙폭을 살펴보세요. 미래 예측이나 투자 조언은 하지 않습니다.",
+    },
+    # Answers are unreadable without these three, so they stay — but folded
+    # into an expander instead of a wall of text above the input.
+    "ask.defaults_title": {
+        "en": "How answers are calculated",
+        "ko": "답변 기준",
     },
     "ask.defaults": {
-        "en": "If you do not specify a period, the app uses the past year. Broad comparisons exclude leveraged ETFs unless you ask to include them. Volume means average daily trading value.",
-        "ko": "기간을 말하지 않으면 최근 1년을 기준으로 봅니다. 여러 ETF를 폭넓게 비교할 때는 따로 요청하지 않는 한 레버리지 ETF를 제외합니다. 거래량 질문은 평균 일일 거래대금을 기준으로 답합니다.",
+        "en": (
+            "- No period given → the past year\n"
+            "- Broad comparisons exclude leveraged ETFs unless you ask for them\n"
+            "- Volume means average daily trading value"
+        ),
+        "ko": (
+            "- 기간을 안 쓰면 → 최근 1년\n"
+            "- 폭넓은 비교에서는 요청하지 않는 한 레버리지 ETF 제외\n"
+            "- 거래량은 평균 일일 거래대금 기준"
+        ),
     },
     "ask.examples": {
         "en": "Examples: `What is positive correlation?` · `Which 3 ETFs had the highest return over the past year?` · `Did ETFs with higher returns also have deeper maximum drawdowns?`",
@@ -874,10 +890,6 @@ COPY: dict[str, dict[Language, str]] = {
     "ask.sql": {
         "en": "Show query details (SQL)",
         "ko": "실행한 조회문(SQL) 보기",
-    },
-    "ask.auto_view": {
-        "en": "Concept questions get a short explanation. For data questions, the app chooses the clearest table or chart.",
-        "ko": "개념 질문에는 짧은 설명으로 답하고, 데이터 질문에는 가장 알기 쉬운 표나 차트를 골라 보여드립니다.",
     },
     "ask.placeholder": {
         "en": "e.g. How much did TLT swing over the past year?",

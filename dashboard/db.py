@@ -63,25 +63,27 @@ def dataframe_width(df: pd.DataFrame) -> str:
     return "content"
 
 GLOSSARIES: dict[Language, dict[str, str]] = {
+    # Definitions only. The label is rendered separately by glossary_expander
+    # and by each column header, so repeating it here printed it twice.
     "en": {
-        "CAGR": "Compound annual growth rate — the average yearly growth rate over the full period.",
-        "Ann. vol": "Annualized volatility — how much daily returns moved up and down, expressed as a yearly number. Higher means wider price swings.",
-        "Max drawdown": "Maximum drawdown — the largest percentage drop from a previous high. −50% means the value fell by half.",
-        "Sharpe (rf=0)": "Sharpe ratio — return compared with price swings. Higher values mean more return for the amount of risk taken. This app assumes a risk-free rate of 0%.",
-        "adj_close": "Dividend-adjusted price — a historical price adjusted for dividends and stock splits so returns can be compared fairly.",
-        "cum_return": "Total return — how much a starting value of 1 gained or lost. 0.5 means +50%.",
-        "rolling_vol_30d": "30-day price swings — how much daily returns moved up and down over the latest 30 trading days.",
-        "drawdown": "Drop from a previous high — 0 means a new high, and −0.12 means 12% below that high.",
+        "CAGR": "The average yearly growth rate over the full period.",
+        "Ann. vol": "How much daily returns moved up and down, expressed as a yearly number. Higher means wider price swings.",
+        "Max drawdown": "The largest percentage drop from a previous high. −50% means the value fell by half.",
+        "Sharpe (rf=0)": "Return compared with price swings. Higher values mean more return for the amount of risk taken. This app assumes a risk-free rate of 0%.",
+        "adj_close": "A historical price adjusted for dividends and stock splits so returns can be compared fairly.",
+        "cum_return": "How much a starting value of 1 gained or lost. 0.5 means +50%.",
+        "rolling_vol_30d": "How much daily returns moved up and down over the latest 30 trading days.",
+        "drawdown": "How far the price sits below its previous high. 0 means a new high, −0.12 means 12% below it.",
     },
     "ko": {
-        "CAGR": "연평균 복리수익률 — 전체 기간의 성과를 '매년 같은 비율로 늘었다면'으로 바꿔 표시한 값.",
-        "Ann. vol": "연환산 변동성 — 가격이 오르내린 정도를 1년 기준으로 바꾼 값. 클수록 가격 흔들림이 큼.",
-        "Max drawdown": "최대 낙폭 — 이전 고점에서 가장 크게 떨어진 비율. −50%면 가치가 절반으로 줄었다는 뜻.",
-        "Sharpe (rf=0)": "샤프 지수 — 가격 흔들림과 비교해 어느 정도 수익을 냈는지 보여주는 값. 이 앱은 무위험 수익률을 0%로 가정.",
-        "adj_close": "배당 반영 가격 — 배당과 주식 분할을 반영해 수익률을 공정하게 비교할 수 있도록 조정한 과거 가격.",
-        "cum_return": "누적수익률 — 시작일에 1을 투자했을 때 전체 기간에 얼마나 늘거나 줄었는지. 0.5는 +50%.",
-        "rolling_vol_30d": "30일 가격 변동 — 최근 30거래일 동안 일간 수익률이 얼마나 크게 오르내렸는지 나타낸 값.",
-        "drawdown": "고점 대비 하락률 — 이전 최고 가격에서 현재 얼마나 내려왔는지. 0은 최고점, −0.12는 12% 아래.",
+        "CAGR": "전체 기간의 성과를 '매년 같은 비율로 늘었다면'으로 바꿔 표시한 값.",
+        "Ann. vol": "가격이 오르내린 정도를 1년 기준으로 바꾼 값. 클수록 가격 흔들림이 큼.",
+        "Max drawdown": "이전 고점에서 가장 크게 떨어진 비율. −50%면 가치가 절반으로 줄었다는 뜻.",
+        "Sharpe (rf=0)": "가격 흔들림과 비교해 어느 정도 수익을 냈는지 보여주는 값. 이 앱은 무위험 수익률을 0%로 가정.",
+        "adj_close": "배당과 주식 분할을 반영해 수익률을 공정하게 비교할 수 있도록 조정한 과거 가격.",
+        "cum_return": "시작일에 1을 투자했을 때 전체 기간에 얼마나 늘거나 줄었는지. 0.5는 +50%.",
+        "rolling_vol_30d": "최근 30거래일 동안 일간 수익률이 얼마나 크게 오르내렸는지 나타낸 값.",
+        "drawdown": "이전 최고 가격에서 현재 얼마나 내려왔는지. 0은 최고점, −0.12는 12% 아래.",
     },
 }
 

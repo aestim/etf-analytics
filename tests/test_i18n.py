@@ -50,10 +50,24 @@ def test_interface_copy_avoids_internal_or_translation_heavy_phrases():
 def test_ask_copy_advertises_concepts_without_promising_investment_advice():
     assert "positive correlation" in tr("ask.examples", "en")
     assert "양의 상관관계" in tr("ask.examples", "ko")
-    assert "does not predict" in tr("ask.subtitle", "en")
-    assert "개인 투자 조언" in tr("ask.subtitle", "ko")
+    # Both disclaimers survive rewording: no forecast, no advice.
+    assert "forecast" in tr("ask.subtitle", "en")
+    assert "investment advice" in tr("ask.subtitle", "en")
+    assert "예측" in tr("ask.subtitle", "ko")
+    assert "투자 조언" in tr("ask.subtitle", "ko")
     assert "AI key" in tr("ask.unavailable", "en")
     assert "AI 키" in tr("ask.unavailable", "ko")
+
+
+def test_ask_intro_does_not_narrate_what_the_page_already_shows():
+    """The sidebar has a language toggle and answers follow the question's
+    language, so saying so in prose only lengthened the page."""
+    for lang in ("en", "ko"):
+        assert "Korean" not in tr("ask.subtitle", lang)
+        assert "한국어" not in tr("ask.subtitle", lang)
+    # One short line, not a paragraph, above the input.
+    assert len(tr("ask.subtitle", "en")) < 140
+    assert len(tr("ask.subtitle", "ko")) < 100
 
 
 def test_korean_ticker_explanations_cover_the_configured_universe():

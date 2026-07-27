@@ -38,8 +38,11 @@ from i18n import current_language, tr  # noqa: E402
 lang = current_language()
 st.title(tr("ask.title", lang))
 st.caption(tr("ask.subtitle", lang))
-st.caption(tr("ask.defaults", lang))
 st.info(tr("ask.examples", lang))
+# The calculation defaults change how an answer should be read, so they stay
+# on the page — but folded away, not stacked above the input as prose.
+with st.expander(tr("ask.defaults_title", lang)):
+    st.markdown(tr("ask.defaults", lang))
 
 _ai_configured = bool(os.getenv("GEMINI_API_KEY"))
 _warehouse_configured = warehouse_available()
@@ -196,8 +199,6 @@ def show_assistant(entry: dict, key: str) -> None:
         if entry.get("chart_note"):
             st.caption(entry["chart_note"])
 
-
-st.caption(tr("ask.auto_view", lang))
 
 if "chat" not in st.session_state:
     st.session_state.chat = []
