@@ -57,8 +57,8 @@ from db import (
     PLOTLY_LAYOUT,
     dataframe_width,
     demo_mode_banner,
-    glossary_expander,
     glossary_help,
+    glossary_items,
     load_dim_etf,
     load_mart_returns,
     load_mart_risk,
@@ -885,16 +885,15 @@ with risk_tab:
         },
     )
 
+# One explanatory panel, not two. A separate metrics guide sat directly below
+# this one and read as a duplicate of it — same audience, same purpose, both
+# collapsed at the foot of the page.
 with st.expander(tr("home.intro_title", lang)):
     st.markdown(tr("home.intro_body", lang))
+    st.markdown(f"**{tr('home.metrics_guide', lang)}**")
+    glossary_items(["adj_close", "cum_return", "rolling_vol_30d", "drawdown"], lang)
 
 render_ticker_guide(lang)
 
 with st.expander(tr("home.technical_title", lang)):
     st.caption(tr("home.technical_body", lang))
-
-glossary_expander(
-    ["adj_close", "cum_return", "rolling_vol_30d", "drawdown"],
-    lang,
-    title=tr("home.metrics_guide", lang),
-)

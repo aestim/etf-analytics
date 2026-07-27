@@ -21,16 +21,15 @@ COPY: dict[str, dict[Language, str]] = {
         "ko": "👋 ETF가 처음이라면 여기부터",
     },
     "home.intro_body": {
+        # Basics only. home.py appends the metric definitions to this same
+        # panel, so writing them here too would define each term twice.
         "en": """
         An **ETF** is a fund that holds a basket of investments, such as stocks or bonds.
 
         A **ticker** is its short market code. For example: `SPY` = large US companies,
         `BND` = US bonds and `GLD` = gold.
 
-        1. Choose the ETFs you want to compare. The dashboard starts with `SPY`, `BND` and `GLD`.
-        2. **Dividend-adjusted price** includes dividends and stock splits.
-        3. **Total return** shows how much a starting value of `1` gained or lost.
-        4. **30-day price swings** show how sharply daily returns moved up and down.
+        Pick the ETFs you want to compare — the dashboard starts with `SPY`, `BND` and `GLD`.
 
         ⚠️ For education only. Past results do not predict future performance, and this app does not recommend buying or selling.
         """,
@@ -40,10 +39,7 @@ COPY: dict[str, dict[Language, str]] = {
         **티커**(ticker)는 그 상품의 짧은 이름입니다. 예: `SPY`=미국 대형주,
         `BND`=미국 채권, `GLD`=금.
 
-        1. 비교할 ETF를 고릅니다. 처음에는 `SPY`·`BND`·`GLD`를 보여줍니다.
-        2. **배당 반영 가격**은 배당과 주식 분할을 반영한 비교용 가격입니다.
-        3. **누적수익률**은 시작할 때 `1`을 투자했다면 얼마나 늘거나 줄었는지 보여줍니다.
-        4. **최근 30일 가격 변동**은 일간 수익률이 얼마나 크게 오르내렸는지 보여줍니다.
+        비교할 ETF를 고르세요. 처음에는 `SPY`·`BND`·`GLD`를 보여줍니다.
 
         ⚠️ 학습용 도구입니다. 과거 성과가 미래 수익을 보장하지 않으며, 매수·매도를 권하지 않습니다.
         """,

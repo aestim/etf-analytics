@@ -38,7 +38,7 @@ from db import (  # noqa: E402
     DATAFRAME_ROW_HEIGHT,
     PLOTLY_LAYOUT,
     demo_mode_banner,
-    glossary_expander,
+    glossary_items,
     load_dim_etf,
     load_mart_returns,
 )
@@ -885,6 +885,9 @@ def _render_custom_simulator(
     with details_tab:
         for plan in plans:
             st.markdown(_plan_summary(plan, lang))
+        # One reference panel, not two. The strategy rules and the metric
+        # definitions have the same audience and sat directly on top of each
+        # other, which read as the page explaining itself twice.
         with st.expander(tr("strategy.rule_guide", lang)):
             notes = {
                 tr("strategy.buy_hold_name", lang): tr("strategy.buy_hold_note", lang),
@@ -895,11 +898,8 @@ def _render_custom_simulator(
             }
             for name, note in notes.items():
                 st.markdown(f"**{name}**  \n{note}")
-        glossary_expander(
-            ["CAGR", "Ann. vol", "Max drawdown", "Sharpe (rf=0)"],
-            lang,
-            title=tr("strategy.metric_guide", lang),
-        )
+            st.markdown(f"**{tr('strategy.metric_guide', lang)}**")
+            glossary_items(["CAGR", "Ann. vol", "Max drawdown", "Sharpe (rf=0)"], lang)
         with st.expander(tr("simulation.assumptions_title", lang)):
             st.markdown(tr("simulation.assumptions_body", lang))
 

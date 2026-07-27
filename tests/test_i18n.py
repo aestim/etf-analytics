@@ -73,3 +73,15 @@ def test_ask_intro_does_not_narrate_what_the_page_already_shows():
 def test_korean_ticker_explanations_cover_the_configured_universe():
     seed = pd.read_csv("dbt/seeds/etf_info.csv")
     assert set(TICKER_DESCRIPTIONS_KO) == set(seed["ticker"])
+
+
+def test_the_overview_intro_does_not_redefine_the_metrics_guide():
+    """Two expanders on one page defining the same terms is the duplication
+    readers notice. The intro covers what an ETF and a ticker are; the metrics
+    guide owns the measure definitions."""
+    import db
+
+    for lang in ("en", "ko"):
+        intro = tr("home.intro_body", lang)
+        for key in ("adj_close", "cum_return", "rolling_vol_30d", "drawdown"):
+            assert db.GLOSSARY_LABELS[lang][key] not in intro

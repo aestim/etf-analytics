@@ -73,7 +73,7 @@ GLOSSARIES: dict[Language, dict[str, str]] = {
         "adj_close": "A historical price adjusted for dividends and stock splits so returns can be compared fairly.",
         "cum_return": "How much a starting value of 1 gained or lost. 0.5 means +50%.",
         "rolling_vol_30d": "How much daily returns moved up and down over the latest 30 trading days.",
-        "drawdown": "How far the price sits below its previous high. 0 means a new high, −0.12 means 12% below it.",
+        "drawdown": "How far the price sits below its own earlier peak. 0 means a new high, −0.12 means 12% below it.",
     },
     "ko": {
         "CAGR": "전체 기간의 성과를 '매년 같은 비율로 늘었다면'으로 바꿔 표시한 값.",
@@ -116,11 +116,21 @@ def glossary_help(key: str, lang: Language) -> str:
     return GLOSSARIES[lang][key]
 
 
+def glossary_items(keys, lang: Language) -> None:
+    """Render metric definitions with no container of their own.
+
+    Kept separate from the expander so a page that already has an explanatory
+    panel can put the definitions inside it, rather than opening a second
+    panel that reads as a duplicate of the first.
+    """
+    for k in keys:
+        st.markdown(f"**{GLOSSARY_LABELS[lang][k]}** — {glossary_help(k, lang)}")
+
+
 def glossary_expander(keys, lang: Language, title: str = "📖 Metrics guide") -> None:
-    """Render an expander explaining metrics in the interface language."""
+    """Render metric definitions in an expander of their own."""
     with st.expander(title):
-        for k in keys:
-            st.markdown(f"**{GLOSSARY_LABELS[lang][k]}** — {glossary_help(k, lang)}")
+        glossary_items(keys, lang)
 
 
 # --------------------------------------------------------------------------
