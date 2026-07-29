@@ -9,14 +9,14 @@ that need a live data warehouse or an external provider.
 | Static error checks | `ruff check --select E9,F63,F7,F82 .` | syntax errors, undefined names, and invalid control flow, including paths a unit test may not execute | Cheap complement to runtime tests |
 | dbt parse | `dbt deps && dbt parse` | model SQL, refs, macros, YAML tests, and project configuration compile correctly | No database or repository secrets required on pull requests |
 | dbt data tests | scheduled `Daily ETF ingest` when `POSTGRES_HOST` is configured | nulls, uniqueness, relationships, return anomaly bounds, and per-ticker mart recency against real data | These assertions require a populated warehouse and cannot be replaced by parse |
-| External ingest smoke test | scheduled `Daily ETF ingest` | Yahoo returns data for every configured ticker and the cloud raw table accepts the upsert; weekday 1-month and monthly 10-year windows exercise the same loader | Network-dependent by nature, so it is kept out of pull-request pytest |
+| External ingest smoke test | scheduled `Daily ETF ingest` | Yahoo returns data for every configured ticker and the cloud raw table accepts the upsert; weekday 1-month and monthly maximum-history windows exercise the same loader | Network-dependent by nature, so it is kept out of pull-request pytest |
 
 ## CI policy
 
 - `.github/workflows/test.yml` runs on pull requests, code/config pushes to `main`, and manual dispatch.
 - Scheduled ingest has read-only repository permission. It writes temporary
   parquet outside the checkout and refreshes Postgres/dbt without creating a Git commit.
-- Weekday runs fetch a 1-month overlap; the monthly reconciliation fetches 10 years.
+- Weekday runs fetch a 1-month overlap; the monthly reconciliation fetches each ticker's maximum available history.
   The workflow contract test pins both schedules and the manual override.
 - Superseded runs on the same branch are cancelled; both jobs have bounded timeouts.
 - CI and the Airflow/daily-ingest runtime use Python 3.11.
@@ -29,10 +29,12 @@ that need a live data warehouse or an external provider.
   secrets are required and validated before ingest.
 
 The quota-aware `qa/run_week2.py` set keeps semantic regressions that offline
-tests cannot prove: explicit past-10-year queries must execute, descriptive
+tests cannot prove: explicit long-window queries must execute, descriptive
 `in 10 years` means a historical window while `10 years from now` is refused,
-long-term return uses CAGR, liquidity uses dollar volume, and generic versus
-explicitly leveraged universes remain distinct.
+long-term return uses CAGR, liquidity uses a dollar-volume proxy, and generic
+versus explicitly leveraged universes remain distinct. Offline policy tests pin
+the 20-year maximum, deterministic refusal above it, and calendar-coverage
+fields so observation count alone cannot masquerade as full history.
 
 ## Local commands
 

@@ -77,10 +77,11 @@ flowchart LR
 ### History and refresh policy
 
 - **Retention:** keep every loaded trading day in `raw.etf_prices`; there is no age-based delete. The row count is small for a 17-ETF daily universe, and older regimes are more valuable than the storage saved by truncating them.
-- **Initial/manual backfill:** request 10 years from Yahoo.
-- **Weekday refresh:** request a trailing 1-month overlap and upsert it. The overlap catches delayed sessions and recent corrections without rewriting ten years every day.
-- **Monthly reconciliation:** request 10 years again so retroactive adjusted-close changes from distributions or splits propagate through the warehouse.
-- dbt rebuilds the analysis marts from all retained raw rows, so the stored history can grow beyond ten years even though the vendor reconciliation window is ten years.
+- **Initial/manual backfill:** request `max`, preserving the vendor history available after each ETF's actual inception.
+- **Weekday refresh:** request a trailing 1-month overlap and upsert it. The overlap catches delayed sessions and recent corrections without rewriting all history every day.
+- **Monthly reconciliation:** request `max` again so retroactive adjusted-close changes from distributions or splits propagate through the full retained series instead of stopping at an arbitrary boundary.
+- **Analysis contract:** dashboards use actual common observations. Ask accepts explicit trailing windows up to 20 years and returns start/end dates plus observation counts; it never synthesizes pre-inception history.
+- dbt rebuilds the analysis marts from all retained raw rows. The bundled parquet fallback is a deliberately fixed snapshot and can have a shorter range than the live warehouse.
 
 ## LLM Q&A layer — security path
 
@@ -114,8 +115,9 @@ flowchart LR
 Relationship results carry an explicit `universe_scope` contract. Generic
 cross-ETF relationships default to `leverage = 1`; leverage is included when it
 is the requested metric or the user explicitly asks for it. Plain volume means
-log-scaled average daily dollar volume, explicit historical windows override the
-1-year default, and performance windows of 2 years or longer use CAGR.
+a log-scaled adjusted-price dollar-volume proxy, explicit historical windows up
+to 20 years override the 1-year default when actual coverage is complete, and
+performance windows of 2 years or longer use CAGR.
 
 Defence in depth: `etf_reader` has SELECT only on `public_marts`, defaults to
 read-only transactions, and the application also issues `SET TRANSACTION READ
@@ -129,6 +131,9 @@ in the UI for transparency and auditability.
 ## Airflow DAG
 
 DAG id: `etf_pipeline` (see `airflow/dags/etf_pipeline_dag.py`)
+
+The daily DAG explicitly passes `FETCH_PERIOD=1mo`. This matters because the
+standalone ingest command defaults to `max` for a canonical backfill.
 
 | Task | Command / operator | Depends on |
 |------|-------------------|------------|

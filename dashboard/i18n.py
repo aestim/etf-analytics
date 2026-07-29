@@ -833,13 +833,15 @@ COPY: dict[str, dict[Language, str]] = {
     "ask.defaults": {
         "en": (
             "- No period given → the past year\n"
+            "- Explicit comparisons support up to 20 years, subject to each ETF's actual history\n"
             "- Broad comparisons exclude leveraged ETFs unless you ask for them\n"
-            "- Volume means average daily trading value"
+            "- Volume comparisons use an adjusted-price dollar-volume proxy"
         ),
         "ko": (
             "- 기간을 안 쓰면 → 최근 1년\n"
+            "- 명시 비교는 최대 20년이며 ETF별 실제 상장 이후 이력을 따름\n"
             "- 폭넓은 비교에서는 요청하지 않는 한 레버리지 ETF 제외\n"
-            "- 거래량은 평균 일일 거래대금 기준"
+            "- 거래량 비교는 조정가격 기반 유동성 proxy 사용"
         ),
     },
     "ask.examples": {

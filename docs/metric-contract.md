@@ -31,6 +31,20 @@ Consequences:
 - A ranking must apply the same window and minimum coverage rule to every
   ticker. Rows with inadequate coverage are excluded, not compared as if full.
 
+## Long-history coverage policy
+
+- The canonical warehouse requests and retains the maximum vendor history
+  available after each ETF's actual inception. It never creates earlier rows.
+- Ask accepts explicit trailing windows up to 20 years. Longer requests are
+  refused rather than silently shortened.
+- For a full N-year Ask comparison, `N × 200` paired trading observations is a
+  density screen, not proof of calendar coverage. `period_start` and
+  `period_end` must also fall within 14 calendar days of the requested
+  boundaries.
+- If a named ETF cannot fill the window, return and label its actual
+  `period_start`, `period_end`, and observation counts. Do not describe the
+  result as a full N-year comparison.
+
 ## Point-in-time rolling metrics
 
 `mart_etf_risk_metrics` intentionally has different semantics:

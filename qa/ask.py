@@ -85,8 +85,9 @@ DEFAULT_RETURN_LOOKBACK = "1 year"
 MIN_DEFAULT_RETURN_OBSERVATIONS = 200
 DEFAULT_RELATIONSHIP_LOOKBACK = "1 year"
 MIN_RELATIONSHIP_OBSERVATIONS = 200
-MAX_HISTORICAL_LOOKBACK_YEARS = 10
+MAX_ASK_LOOKBACK_YEARS = 20
 MIN_OBSERVATIONS_PER_YEAR = 200
+FULL_PERIOD_BOUNDARY_TOLERANCE_DAYS = 14
 
 _ENGLISH_HISTORICAL_YEARS = re.compile(
     r"\b(?:over\s+(?:the\s+)?past|past|last)\s+(\d+)\s+years?\b",
@@ -128,6 +129,25 @@ def historical_lookback_years(question: str) -> int | None:
     return None
 
 
+def historical_window_limit_reason(question: str) -> str | None:
+    """Return a deterministic refusal when an explicit window exceeds policy."""
+
+    years = historical_lookback_years(question)
+    if years is None or years <= MAX_ASK_LOOKBACK_YEARS:
+        return None
+    if re.search(r"[가-힣]", question):
+        return (
+            f"요청한 {years}년 기간은 비교 분석 범위를 넘습니다. "
+            f"이 앱은 최대 {MAX_ASK_LOOKBACK_YEARS}년까지 비교하며, "
+            "ETF별 실제 상장 이후 데이터 범위를 함께 표시합니다."
+        )
+    return (
+        f"The requested {years}-year window exceeds the comparison limit. "
+        f"This app supports up to {MAX_ASK_LOOKBACK_YEARS} years and reports "
+        "the actual post-inception coverage for each ETF."
+    )
+
+
 def _question_with_period_context(question: str) -> str:
     years = historical_lookback_years(question)
     if years is None:
@@ -138,7 +158,11 @@ def _question_with_period_context(question: str) -> str:
         "Parsed request context (follow this exactly): the user explicitly requested "
         f"a trailing historical {years}-year window, not a future prediction. This "
         f"overrides the default lookback. Require at least {minimum} paired trading-day "
-        "observations per ticker for a full-period comparison."
+        "observations per ticker as a density screen. A full-period comparison also "
+        f"requires period_start and period_end within {FULL_PERIOD_BOUNDARY_TOLERANCE_DAYS} "
+        "days of the requested boundaries. Always return period_start, period_end, "
+        "price_observations, and return_observations; never describe stale or "
+        "post-inception partial history as the full requested period."
     )
 
 
@@ -403,6 +427,9 @@ SQL: WITH period_prices AS (
          FROM period_rows AS p
          GROUP BY ticker
          HAVING COUNT(period_daily_return) >= 2000
+            AND MIN(price_date) <= CURRENT_DATE - INTERVAL '10 years'
+                                   + INTERVAL '14 days'
+            AND MAX(price_date) >= CURRENT_DATE - INTERVAL '14 days'
      )
      SELECT *,
             'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
@@ -452,6 +479,9 @@ SQL: WITH period_prices AS (
          FROM period_rows
          GROUP BY ticker
          HAVING COUNT(period_daily_return) >= 2000
+            AND MIN(price_date) <= CURRENT_DATE - INTERVAL '10 years'
+                                   + INTERVAL '14 days'
+            AND MAX(price_date) >= CURRENT_DATE - INTERVAL '14 days'
      )
      SELECT *,
             'the current unleveraged ETF subset (leverage = 1)' AS universe_scope,
@@ -552,12 +582,22 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
 - In a join, qualify every source column with the alias of the table that
   actually owns that column. Never copy a metric onto another table alias.
 - Relative dates from CURRENT_DATE (e.g. INTERVAL '1 year', DATE_TRUNC('year', ...)).
-- The documented marts contain up to {MAX_HISTORICAL_LOOKBACK_YEARS} years of
-  history. An explicit historical period such as "over the past 10 years",
-  "last 5 years", or "지난 10년" overrides every 1-year default and is in scope.
-  Never claim that the dataset only supports one year. For an explicit N-year
-  comparison, require at least N × {MIN_OBSERVATIONS_PER_YEAR} paired observations
-  per ticker (for example, 2,000 for 10 years).
+- The warehouse retains the maximum vendor history available for each ticker;
+  coverage starts at that fund's actual inception and therefore differs by ETF.
+  Ask supports explicit trailing windows up to {MAX_ASK_LOOKBACK_YEARS} years.
+  A period such as "over the past 20 years", "last 5 years", or "지난 10년"
+  overrides every 1-year default. A request above {MAX_ASK_LOOKBACK_YEARS} years
+  is out_of_scope; never silently shorten it.
+  Never claim that the dataset only supports one year.
+- For an explicit N-year comparison, return period_start, period_end,
+  price_observations, and return_observations. Require both (a) at least
+  N × {MIN_OBSERVATIONS_PER_YEAR} paired observations per ticker (for example,
+  4,000 for 20 years) and (b) period_start/period_end within
+  {FULL_PERIOD_BOUNDARY_TOLERANCE_DAYS} days of the requested boundaries. The
+  count is only a density screen, not proof of calendar coverage. Exclude
+  incomplete tickers from a full-period ranking/relationship; if the user names
+  one, report its actual partial coverage rather than calling it a full N-year
+  result.
 - In this analytics UI, an otherwise descriptive "in N years" means a trailing
   historical N-year window. If the question adds an explicit future cue such as
   "will", "from now", "future", "앞으로", or "N년 후", it is a prediction and
@@ -582,11 +622,13 @@ SELECT statement over the tables below. Fill every SqlAnswer field. Rules:
   rolling time series. A requested-period volatility is
   STDDEV_SAMP(period_daily_return) * SQRT(252), where period_daily_return is
   recomputed after filtering adjusted prices to the requested dates.
-- For liquidity comparisons across ETFs, plain "volume" / "거래량" means daily
-  dollar volume (`volume * adj_close`), not share count, because ETF share prices
-  differ. Return `AVG(volume * adj_close)::double precision AS
+- For liquidity comparisons across ETFs, plain "volume" / "거래량" means the
+  adjusted-price dollar-volume proxy (`volume * adj_close`), not share count,
+  because ETF share prices differ. It is a comparison proxy, not the
+  exchange-reported nominal trading value (which would use unadjusted Close).
+  Return `AVG(volume * adj_close)::double precision AS
   avg_daily_dollar_volume`. Use `LN(NULLIF(avg_daily_dollar_volume, 0))` inside
-  CORR to reduce scale skew while returning the raw dollar value for display.
+  CORR to reduce scale skew while returning the raw proxy value for display.
   Only use share volume when the user explicitly asks for shares/contracts.
 - For performance windows of 2 years or longer, or when the user asks for an
   annualized long-term return, use CAGR rather than raw cumulative return:
@@ -909,6 +951,8 @@ def answer(question: str, *, execute_data: bool = True) -> AskResult:
     failures to be data, not crashes.
     """
     try:
+        if reason := historical_window_limit_reason(question):
+            return AskResult(question, "refused_gate", reason=reason)
         generated = _with_backoff(generate_sql, question)
         if generated.intent == "concept_question":
             return AskResult(

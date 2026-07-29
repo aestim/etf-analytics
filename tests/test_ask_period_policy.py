@@ -1,16 +1,21 @@
 """Ask prompt defaults ambiguous return rankings to a comparable window."""
 
+import pytest
+
+import ask
 from ask import (
     DEFAULT_RELATIONSHIP_LOOKBACK,
     DEFAULT_RETURN_LOOKBACK,
     FEW_SHOTS,
-    MAX_HISTORICAL_LOOKBACK_YEARS,
+    FULL_PERIOD_BOUNDARY_TOLERANCE_DAYS,
+    MAX_ASK_LOOKBACK_YEARS,
     MIN_OBSERVATIONS_PER_YEAR,
     MIN_RELATIONSHIP_OBSERVATIONS,
     MIN_DEFAULT_RETURN_OBSERVATIONS,
     SQL_SYSTEM_PROMPT,
     _question_with_period_context,
     historical_lookback_years,
+    historical_window_limit_reason,
 )
 from sql_guard import validate
 
@@ -30,8 +35,7 @@ def test_default_ranking_requires_enough_observations():
 
 
 def test_ticker_definitions_have_one_policy_per_side_of_the_universe():
-    """"What is SGOV?" reads the stored description; "What is JEPQ?" is answered
-    from general knowledge, labelled as such, instead of being refused."""
+    """Use stored descriptions in-universe and labelled knowledge outside it."""
     # In-universe: grounded in dim_etf, not the model's memory.
     assert "IS in the universe list below is a\n  data_query" in SQL_SYSTEM_PROMPT
     assert "that stored description in the user's language" in SQL_SYSTEM_PROMPT
@@ -65,14 +69,18 @@ def test_relationship_questions_are_in_scope_with_a_default_window():
 
 
 def test_explicit_historical_window_overrides_relationship_default():
-    assert MAX_HISTORICAL_LOOKBACK_YEARS == 10
+    assert MAX_ASK_LOOKBACK_YEARS == 20
     assert MIN_OBSERVATIONS_PER_YEAR == 200
     assert historical_lookback_years("over the past 10 years") == 10
+    assert historical_lookback_years("over the past 20 years") == 20
     assert historical_lookback_years("지난 5년 변동성") == 5
+    assert historical_lookback_years("최근 20년 변동성") == 20
     assert historical_lookback_years("10-year CAGR and volatility") == 10
     assert historical_lookback_years("10년 CAGR 비교") == 10
     assert historical_lookback_years("in 10 years") == 10
-    assert historical_lookback_years("Will it be more volatile 10 years from now?") is None
+    assert (
+        historical_lookback_years("Will it be more volatile 10 years from now?") is None
+    )
     assert historical_lookback_years("Predict the 10-year return") is None
 
     contents = _question_with_period_context(
@@ -83,11 +91,39 @@ def test_explicit_historical_window_overrides_relationship_default():
     assert "not a future prediction" in contents
 
 
+def test_twenty_year_context_requires_count_and_calendar_coverage():
+    contents = _question_with_period_context(
+        "Compare SPY and QQQ over the past 20 years"
+    )
+
+    assert FULL_PERIOD_BOUNDARY_TOLERANCE_DAYS == 14
+    assert "historical 20-year window" in contents
+    assert "at least 4000 paired" in contents
+    assert "period_start and period_end within 14 days" in contents
+    assert "never describe stale or post-inception partial history" in contents
+
+
+def test_window_above_twenty_years_is_refused_before_llm(monkeypatch):
+    monkeypatch.setattr(
+        ask,
+        "generate_sql",
+        lambda question: pytest.fail("Out-of-policy windows must not call the LLM"),
+    )
+
+    assert "최대 20년" in historical_window_limit_reason("지난 21년 수익률")
+    result = ask.answer("지난 21년 수익률")
+
+    assert result.status == "refused_gate"
+    assert "최대 20년" in result.reason
+
+
 def test_prompt_distinguishes_historical_and_future_year_phrasing():
     assert "Never claim that the dataset only supports one year" in SQL_SYSTEM_PROMPT
     assert 'descriptive "in N years"' in SQL_SYSTEM_PROMPT
     assert '"from now"' in SQL_SYSTEM_PROMPT
-    assert "2,000 for 10 years" in SQL_SYSTEM_PROMPT
+    assert "maximum vendor history available" in SQL_SYSTEM_PROMPT
+    assert "4,000 for 20 years" in SQL_SYSTEM_PROMPT
+    assert "never silently shorten it" in SQL_SYSTEM_PROMPT
 
 
 def test_known_relationship_questions_are_canonical_examples():
@@ -106,8 +142,8 @@ def test_prompt_routes_general_concepts_without_sql_or_investment_advice():
     assert 'intent="concept_question"' in SQL_SYSTEM_PROMPT
     assert "양의 상관관계가 뭐야?" in SQL_SYSTEM_PROMPT
     assert "Why do bond prices generally fall" in SQL_SYSTEM_PROMPT
-    assert "Set sql=\"\"" in SQL_SYSTEM_PROMPT
-    assert "General educational\n  \"why\" questions" in SQL_SYSTEM_PROMPT
+    assert 'Set sql=""' in SQL_SYSTEM_PROMPT
+    assert 'General educational\n  "why" questions' in SQL_SYSTEM_PROMPT
     assert "personal investment advice" in SQL_SYSTEM_PROMPT
 
 

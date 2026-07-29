@@ -27,13 +27,23 @@ from schema_prompt import ALLOWED_TABLES, SCHEMA_NAME, build_sqlglot_schema
 # Ceiling to stop pathological full-table dumps, NOT a readability cap — a daily
 # multi-year time series over a few tickers is thousands of rows (3y × 2 tickers
 # ≈ 1500), and a smaller cap silently truncated those to the earliest slice.
-# 10k covers ~4 tickers × 10y while still bounding runaway queries.
-MAX_ROWS = 10000
+# 30k covers five long-lived tickers over a 20-year daily window while still
+# bounding raw dumps. Cross-universe questions should aggregate by ticker.
+MAX_ROWS = 30000
 
 # Collect only the node types that exist in the installed sqlglot version
 _FORBIDDEN_NAMES = (
-    "Insert", "Update", "Delete", "Drop", "Create", "Alter", "AlterTable",
-    "Merge", "TruncateTable", "Grant", "Command",
+    "Insert",
+    "Update",
+    "Delete",
+    "Drop",
+    "Create",
+    "Alter",
+    "AlterTable",
+    "Merge",
+    "TruncateTable",
+    "Grant",
+    "Command",
 )
 FORBIDDEN_NODES = tuple(getattr(exp, n) for n in _FORBIDDEN_NAMES if hasattr(exp, n))
 

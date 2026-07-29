@@ -29,9 +29,19 @@ def test_scheduled_ingest_uses_small_daily_and_full_monthly_windows():
     assert "cron: '30 21 1 * *'" in workflow
     assert 'if [ "$SCHEDULE_EXPRESSION" = "30 21 1 * *" ]' in workflow
     assert 'period="1mo"' in workflow
-    assert 'period="10y"' in workflow
+    assert 'period="max"' in workflow
     assert "FETCH_PERIOD: ${{ steps.fetch_window.outputs.period }}" in workflow
-    assert "1mo|10y" in workflow
+    assert "1mo|10y|max" in workflow
+    assert "\n          - max\n" in workflow
+
+
+def test_airflow_daily_ingest_explicitly_overrides_full_backfill_default():
+    dag = (ROOT / "airflow" / "dags" / "etf_pipeline_dag.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"FETCH_PERIOD": os.environ.get("FETCH_PERIOD", "1mo")' in dag
+    assert '"ETF_TICKERS": os.environ.get("ETF_TICKERS", "")' in dag
 
 
 def test_ingest_uses_one_versioned_universe_instead_of_workflow_literals():

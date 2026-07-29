@@ -794,7 +794,7 @@ def fetch_price_history(
     ticker: str,
     *,
     downloader: Callable[..., pd.DataFrame] | None = None,
-    period: str = "10y",
+    period: str = "max",
 ) -> pd.DataFrame:
     """Fetch and normalize one Yahoo Finance symbol.
 

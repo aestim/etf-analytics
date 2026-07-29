@@ -19,7 +19,7 @@ flowchart LR
     C --> D["4 · Serve<br/>Streamlit comparison + simulator"]
 ```
 
-**Test suite:** 222 offline pytest tests + 17 dbt data tests.
+**Test suite:** 288 offline pytest tests + 17 dbt data tests.
 
 Key design decisions:
 
@@ -38,7 +38,7 @@ broad US bond basket, and `GLD` tracks gold.
 
 This project does four simple things:
 
-1. Downloads each ETF's daily market history.
+1. Downloads each ETF's available daily market history.
 2. Cleans it and calculates return, price swings and the worst fall from a peak.
 3. Shows the results as charts and tables.
 4. Optionally lets a person ask a Korean or English concept or data question, such as
@@ -79,7 +79,7 @@ executes it as `etf_reader` with `READ ONLY`, a fixed `search_path`, and a timeo
 
 ## Features
 
-- **Ingest** — yfinance daily adjusted prices (one batched request for `config/etf_universe.txt`, with an optional `ETF_TICKERS` override), parquet landing zone + idempotent Postgres upsert; missing Adjusted Close fails rather than silently substituting Close
+- **Ingest** — maximum available yfinance daily adjusted-price history (one batched request for `config/etf_universe.txt`, with an optional `ETF_TICKERS` override), parquet landing zone + idempotent Postgres upsert; missing Adjusted Close fails rather than silently substituting Close
 - **Transform** — dbt `staging → marts` (daily returns, 30-day rolling volatility, drawdown) plus a `dim_etf` reference dimension (asset class, sub class, leverage, plain-language description) built from a seed
 - **Data quality** — 17 dbt tests including an anomaly tripwire for ±75% daily returns and a freshness failure evaluated separately for every ticker
 - **Orchestration** — Airflow DAG (`ingest → dbt run → dbt test`) and a GitHub Actions daily ingest that refreshes the cloud warehouse without writing to `main`
@@ -94,7 +94,7 @@ executes it as `etf_reader` with `READ ONLY`, a fixed `search_path`, and a timeo
 
 Plain-language questions ("Which long-duration Treasury ETF had the lowest volatility this year?") answered against the marts:
 
-1. **Intent routing + Text-to-SQL** ✅ — one Gemini structured-output call returns `concept_question` with a beginner-friendly explanation, `data_query` with SQL, or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`); explicit historical windows up to 10 years override the 1-year default, and cross-ETF relationships work without naming a ticker — see [`qa/ask.py`](qa/ask.py)
+1. **Intent routing + Text-to-SQL** ✅ — one Gemini structured-output call returns `concept_question` with a beginner-friendly explanation, `data_query` with SQL, or a precise `out_of_scope` refusal. The schema prompt is generated from dbt docs (`schema.yml` + `dim_etf`); explicit historical windows up to 20 years override the 1-year default, require actual calendar coverage, and cross-ETF relationships work without naming a ticker — see [`qa/ask.py`](qa/ask.py)
 2. **Safety** ✅ — only `data_query` output reaches the SQL path. Generated SQL is parsed with sqlglot and rejected unless it is one SELECT that reads at least one whitelisted table, resolves documented columns, and uses only allowlisted functions. It then runs as `etf_reader` in a `READ ONLY` transaction with a fixed `search_path`, row limit, and timeout. Predictions, investment advice, unsupported causal claims and simulations are refused — see the quota-aware runner [`qa/run_week2.py`](qa/run_week2.py)
 3. **Charts** ✅ — result shape and question type deterministically select line (time series), bar (ranking/comparison), scatter (relationship), or table; pydantic validation and whitelisted plotting functions keep rendering fail-safe (`qa/ask.py --chart`)
 4. **Provider resilience** ✅ — stable model IDs (`gemini-3.1-flash-lite` → `gemini-3.5-flash`), a 20-second request timeout, bounded 429/5xx retries, jitter, and model failover prevent an endless Ask spinner
@@ -108,12 +108,16 @@ Example questions:
 - `Do ETFs with higher returns also tend to have larger maximum drawdowns?`
 
 If the period is omitted, Ask uses the trailing one year. Questions that ask
-for a prediction, personal investment advice or unavailable data are refused.
+for more than 20 years, a prediction, personal investment advice or unavailable
+data are refused. Because ETF inception dates differ, every long-window result
+reports its actual start/end dates and observations; missing pre-inception
+history is never synthesized.
 
 For generic cross-ETF relationships, Ask defaults to unleveraged funds so 2x/3x
 products do not dominate the result. Say “include leveraged ETFs” to override it.
-Generic liquidity/volume relationships use log-scaled average daily dollar
-volume, and performance windows of two years or longer use CAGR.
+Generic liquidity/volume relationships use a log-scaled adjusted-price
+dollar-volume proxy (`volume × adj_close`), and performance windows of two years
+or longer use CAGR.
 
 The pytest suite covers ingest normalization, strategy math, dashboard demo marts,
 Ask orchestration, SQL safety, retry/failover, and chart selection/rendering.
@@ -202,9 +206,9 @@ Code validation: [`.github/workflows/test.yml`](.github/workflows/test.yml) — 
 every main push and pull request, runs the project pytest suite and a separate
 `dbt parse` job. Superseded runs on the same branch are cancelled.
 
-Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — reads the shared `config/etf_universe.txt`, fetches a trailing 1-month overlap on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build`. On the first day of each month it reconciles the full 10-year vendor window so historical split/distribution adjustments are corrected. It has read-only repository permission and never commits or pushes to `main`.
+Daily ingest: [`.github/workflows/daily_ingest.yml`](.github/workflows/daily_ingest.yml) — reads the shared `config/etf_universe.txt`, fetches a trailing 1-month overlap on weekdays after US close, upserts `raw.etf_prices`, and runs `dbt build`. On the first day of each month it reconciles each ETF's maximum available vendor history so historical split/distribution adjustments are corrected without creating a stale window boundary. It has read-only repository permission and never commits or pushes to `main`.
 
-A manual dispatch can choose `fetch_period=1mo|10y`, or set `dbt_only=true` to
+A manual dispatch can choose `fetch_period=1mo|10y|max`, or set `dbt_only=true` to
 rebuild cloud marts from the existing raw warehouse without fetching prices.
 
 ### Repository data policy
@@ -212,8 +216,8 @@ rebuild cloud marts from the existing raw warehouse without fetching prices.
 - `main` contains code, documentation, and a bundled parquet fallback snapshot; scheduled jobs do not mutate it.
 - Local ingest still writes ignored files under `data/raw/` for Docker development.
 - Cloud ingest writes its temporary parquet outside the checkout, upserts the managed Postgres raw table, and rebuilds dbt marts.
-- The warehouse has no automatic age-based deletion: the initial 10-year backfill is retained and new trading days accumulate beyond ten years.
-- The bundled snapshot is a resilience/demo fallback, not the source of current production data. Refresh it only as an intentional, reviewed code change.
+- The canonical/manual backfill and monthly reconciliation request `max`; the warehouse retains every vendor row available after each ETF's actual inception and has no age-based deletion.
+- The bundled snapshot is a resilience/demo fallback, not the source of current production data. It can cover a shorter fixed window than the live warehouse; refresh it only as an intentional, reviewed code change.
 
 ### Optional: cloud warehouse (full mode online)
 
@@ -229,6 +233,7 @@ Postgres plan that fits the workload (free-tier limits and pricing may change):
 ## Data & limitations
 
 - Free market data (yfinance) may be delayed or revised; `adj_close` (split- and distribution-adjusted) is required for all return math, and ingest/session additions fail if the provider omits it
+- ETF inception dates differ. The warehouse keeps maximum available history per ticker, but a cross-ETF view starts at the first shared observation; a requested 20-year comparison may therefore exclude or flag newer funds rather than pretend they have complete coverage
 - Visitor-added ETFs are session-only (maximum five) and are not written to Postgres/dbt or exposed to Ask. Search accepts a name, ISIN, or Yahoo Finance symbol, while the direct fallback accepts an exact Yahoo listing symbol (European listings commonly include suffixes such as `.DE`, `.L`, `.AS`, or `.VI`).
 - Yahoo search is best-effort: it may omit listings, mix share classes, or misclassify an ETF. The app ranks Yahoo's ETF-labelled candidates first but does not discard other fund types or claim an exact ISIN/share-class match. Users must choose the exchange listing themselves and verify it with their broker or issuer.
 - Custom-symbol validation requires usable daily price history and a Yahoo-reported USD, EUR or GBP quote currency. Overview defaults to base-currency returns (USD by default, with EUR and GBP options), converts prices with historical daily FX rates, and keeps each listing's local-currency return as an explicit secondary view. The app does not verify tax treatment or local investor eligibility.

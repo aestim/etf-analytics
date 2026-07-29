@@ -79,7 +79,7 @@ def test_fx_loader_maps_yahoo_pairs_to_usd_per_currency_unit():
     assert rates.columns.tolist() == ["EUR", "GBP"]
     assert rates.iloc[-1].tolist() == pytest.approx([1.20, 1.30])
     assert calls[0][0] == ["EURUSD=X", "GBPUSD=X"]
-    assert calls[0][1]["period"] == "10y"
+    assert calls[0][1]["period"] == "max"
 
 
 def test_conversion_uses_cross_rates_and_normalizes_pence():

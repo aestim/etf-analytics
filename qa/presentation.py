@@ -33,7 +33,7 @@ def is_percent_metric(column_name: str | None) -> bool:
 
 
 def is_dollar_metric(column_name: str | None) -> bool:
-    """Whether a metric is a USD-denominated liquidity amount."""
+    """Whether a metric is a USD-denominated liquidity proxy."""
     if not column_name:
         return False
     return "dollar_volume" in column_name.lower()
@@ -46,7 +46,7 @@ METRIC_LABELS = {
     "daily_return": "daily return",
     "leverage": "leverage",
     "avg_daily_volume": "average daily share volume",
-    "avg_daily_dollar_volume": "average daily trading value (log scale)",
+    "avg_daily_dollar_volume": "adjusted-price dollar-volume proxy (log scale)",
     "annualized_vol_30d": "annualized 30-day price swings",
     "avg_annualized_vol_30d": "average annualized 30-day price swings",
     "period_annualized_volatility": "annualized volatility over the selected period",
@@ -64,7 +64,7 @@ KOREAN_METRIC_LABELS = {
     "daily_return": "일간수익률",
     "leverage": "레버리지 배수",
     "avg_daily_volume": "평균 일일 거래량",
-    "avg_daily_dollar_volume": "평균 일일 거래대금",
+    "avg_daily_dollar_volume": "조정가격 기반 유동성 proxy",
     "annualized_vol_30d": "30일 연환산 변동성",
     "avg_annualized_vol_30d": "평균 30일 연환산 변동성",
     "period_annualized_volatility": "선택 기간 연환산 변동성",

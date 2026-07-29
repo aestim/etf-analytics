@@ -148,7 +148,7 @@ def fetch_usd_exchange_rates(
     currencies: tuple[str, ...] | list[str] | set[str],
     *,
     downloader: Callable[..., pd.DataFrame] | None = None,
-    period: str = "10y",
+    period: str = "max",
 ) -> pd.DataFrame:
     """Return USD per EUR/GBP unit, indexed by provider trading date."""
 

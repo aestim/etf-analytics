@@ -38,6 +38,10 @@ PIPELINE_ENV = {
     "POSTGRES_PASSWORD": os.environ.get("POSTGRES_PASSWORD", "etf"),
     "POSTGRES_DB": os.environ.get("POSTGRES_DB", "etf_analytics"),
     "RAW_DATA_DIR": os.environ.get("RAW_DATA_DIR", f"{REPO_ROOT}/data/raw"),
+    # The canonical CLI default is a full backfill. A daily scheduler must
+    # override it so routine runs stay incremental.
+    "FETCH_PERIOD": os.environ.get("FETCH_PERIOD", "1mo"),
+    "ETF_TICKERS": os.environ.get("ETF_TICKERS", ""),
 }
 
 with DAG(

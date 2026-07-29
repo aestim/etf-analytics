@@ -8,6 +8,7 @@ data/raw/{ticker}/ and optionally loads Postgres.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,7 +21,7 @@ load_dotenv(ROOT / ".env")
 UNIVERSE_FILE = ROOT / "config" / "etf_universe.txt"
 _raw = Path(os.getenv("RAW_DATA_DIR", ROOT / "data" / "raw"))
 RAW_DIR = _raw if _raw.is_absolute() else ROOT / _raw
-PERIOD = os.getenv("FETCH_PERIOD", "10y")
+PERIOD = os.getenv("FETCH_PERIOD", "max")
 
 
 def configured_tickers() -> list[str]:
@@ -66,21 +67,46 @@ def _normalize_history(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df["ticker"] = ticker
     df["price_date"] = pd.to_datetime(df["price_date"]).dt.date
     df["_ingested_at"] = datetime.now(timezone.utc)
-    cols = ["ticker", "price_date", "open", "high", "low", "close", "adj_close", "volume", "_ingested_at"]
+    cols = [
+        "ticker",
+        "price_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume",
+        "_ingested_at",
+    ]
     keep = [c for c in cols if c in df.columns]
     return df[keep].drop_duplicates(subset=["ticker", "price_date"])
 
 
-def fetch_all(tickers: list[str]) -> dict[str, pd.DataFrame]:
-    """One batched yfinance request for the whole universe (threaded under the hood)."""
-    data = yf.download(
-        tickers, period=PERIOD, auto_adjust=False, group_by="ticker", progress=False
+def fetch_all(
+    tickers: list[str],
+    *,
+    period: str | None = None,
+    downloader: Callable[..., pd.DataFrame] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Fetch one batch without forcing every ticker to share an inception date."""
+
+    selected_period = period or PERIOD
+    download = downloader or yf.download
+    data = download(
+        tickers,
+        period=selected_period,
+        auto_adjust=False,
+        group_by="ticker",
+        progress=False,
     )
     if data is None or data.empty:
         raise RuntimeError(f"No data returned for {tickers}")
     frames: dict[str, pd.DataFrame] = {}
     for ticker in tickers:
-        history = data[ticker] if isinstance(data.columns, pd.MultiIndex) else data
+        try:
+            history = data[ticker] if isinstance(data.columns, pd.MultiIndex) else data
+        except KeyError as exc:
+            raise RuntimeError(f"No data returned for {ticker}") from exc
         history = history.dropna(how="all")
         if history.empty:
             raise RuntimeError(f"No data returned for {ticker}")
@@ -144,7 +170,7 @@ def load_postgres(df: pd.DataFrame) -> None:
 
 def main() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Fetching {len(TICKERS)} tickers (batched)...")
+    print(f"Fetching {len(TICKERS)} tickers (batched, period={PERIOD})...")
     frames = fetch_all(TICKERS)
     for ticker, df in frames.items():
         path = write_raw_parquet(df, ticker)

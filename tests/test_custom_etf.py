@@ -885,7 +885,7 @@ def test_fetch_price_history_uses_injected_downloader():
 
     assert result["ticker"].unique().tolist() == ["VWCE.DE"]
     assert calls[0][0] == "VWCE.DE"
-    assert calls[0][1]["period"] == "10y"
+    assert calls[0][1]["period"] == "max"
     assert calls[0][1]["timeout"] == 10
 
 

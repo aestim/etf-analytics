@@ -16,10 +16,12 @@ Definitions for raw files, warehouse tables, and mart outputs. Keep in sync with
 
 Parquet written by ingest, partitioned as `data/raw/{ticker}/dt={YYYY-MM-DD}/prices.parquet`
 
-Local/default backfill requests 10 years. Cloud weekday runs request a trailing
-1-month overlap and upsert by `ticker × price_date`; a monthly 10-year
-reconciliation captures retroactive vendor adjustments. Postgres has no
-age-based deletion, so retained history can grow beyond ten years.
+Local/default backfill requests each ticker's maximum available history. Cloud
+weekday runs request a trailing 1-month overlap and upsert by
+`ticker × price_date`; a monthly `max` reconciliation captures retroactive
+vendor adjustments across the full series. Postgres has no age-based deletion.
+History begins at each ETF's actual vendor inception; missing earlier rows are
+not padded or synthesized.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -104,11 +106,11 @@ aggregate reports start/end dates and price/return observation counts.
 
 | Metric | Definition / policy |
 |--------|---------------------|
-| `avg_daily_dollar_volume` | `AVG(volume × adj_close)` in USD; used instead of share count for cross-ETF liquidity comparisons |
+| `avg_daily_dollar_volume` | `AVG(volume × adj_close)`; an adjusted-price dollar-volume **proxy**, not exchange-reported nominal trading value |
 | Dollar-volume relationship | Pearson correlation uses `LN(avg_daily_dollar_volume)` and the scatter x-axis is logarithmic because liquidity is highly skewed |
 | `cagr` | `total_growth^(365.25 / calendar_days) - 1`; used for performance windows of 2 years or longer |
-| Relationship period | Explicit historical period up to 10 years wins; omitted period defaults to trailing 1 year |
-| Comparable history | At least 200 paired trading observations per requested year |
+| Relationship period | Explicit historical period up to 20 years wins; omitted period defaults to trailing 1 year |
+| Comparable history | Report actual start/end dates and observations. A full N-year comparison requires at least 200 paired trading observations per year and both calendar boundaries within 14 days; otherwise exclude or label the ticker as partial history |
 | Default universe | `leverage = 1`; include 2x/3x only when leverage is the metric or the question explicitly requests them |
 | `correlation` | Cross-sectional Pearson coefficient over one aggregated row per ticker; descriptive for the curated warehouse universe, not a population claim |
 

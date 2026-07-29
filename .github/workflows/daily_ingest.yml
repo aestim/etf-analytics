@@ -22,6 +22,7 @@ on:
         options:
           - 1mo
           - 10y
+          - max
 
 permissions:
   contents: read
@@ -76,13 +77,13 @@ jobs:
         run: |
           period="1mo"
           if [ "$SCHEDULE_EXPRESSION" = "30 21 1 * *" ]; then
-            period="10y"
+            period="max"
           elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$REQUESTED_PERIOD" ]; then
             period="$REQUESTED_PERIOD"
           fi
 
           case "$period" in
-            1mo|10y) ;;
+            1mo|10y|max) ;;
             *) echo "::error::Unsupported fetch period: $period"; exit 1 ;;
           esac
 
